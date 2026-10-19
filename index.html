@@ -289,6 +289,28 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 #st-training { display: grid; gap: 10px; }
 #st-training[hidden] { display: none; }
 .reset-panel { display: grid; gap: 12px; }
+.pair { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
+.pair p { margin: 0; font-size: 14px; }
+.pair-head, .camdev-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pair-head b, .camdev-head b { font: 600 18px/1.2 var(--font-display); text-transform: uppercase; letter-spacing: 0.03em; }
+.pill { font-size: 12px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; color: var(--muted); }
+.pill[data-state="on"] { color: var(--green); border-color: var(--green); }
+.pill[data-state="wait"] { color: var(--accent); border-color: var(--accent); }
+.pill[data-state="error"] { color: var(--red); border-color: var(--red); }
+.pair-code { font: 700 52px/1 var(--font-display); letter-spacing: 0.12em; text-align: center; padding: 8px 0; }
+#mode-camera.remote-on #cam-ui .cam-box, #mode-camera.remote-on #calib-hint, #mode-camera.remote-on #cam-start,
+#mode-camera.remote-on #cam-calib, #mode-camera.remote-on .cam-settings { display: none; }
+.camdev { display: grid; gap: 14px; }
+.camdev[hidden] { display: none; }
+.camdev-head .stop-btn { margin-left: auto; }
+.camdev-join { display: grid; gap: 10px; }
+.camdev-join input { font: 700 34px/1 var(--font-display); letter-spacing: 0.2em; text-align: center; }
+.camdev-join p { margin: 0; font-size: 14px; }
+.camdev-score { display: grid; gap: 4px; text-align: center; }
+.camdev-score b { font: 700 72px/1 var(--font-display); }
+.camdev-entry { display: grid; gap: 8px; }
+.camdev-entry p { margin: 0; font-size: 14px; }
+.camdev #miss-btn-2, .camdev #undo-btn-3 { display: inline-block; }
 .history { display: grid; gap: 10px; }
 .history .item { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
 .history .item b { font: 600 20px/1.2 var(--font-display); text-transform: uppercase; }
@@ -514,6 +536,12 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
       <span class="muted" id="format-text"></span>
     </div>
 
+    <div class="panel camdev-entry">
+      <span class="label">Tweede toestel?</span>
+      <p class="muted">Gebruik een oude telefoon of iPad als camera bij het bord. Hij stuurt je darts naar het scorebord.</p>
+      <button type="button" class="btn" id="camdev-open">Dit toestel als camera</button>
+    </div>
+
     <div class="start-row">
       <button type="button" class="btn" id="resume-btn" hidden>Verder met huidige wedstrijd</button>
       <button type="button" class="btn primary" id="start-btn">Start wedstrijd</button>
@@ -568,6 +596,18 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
         </div>
 
         <div id="mode-camera" hidden>
+          <div class="pair" id="pair-host">
+            <div class="pair-head"><b>Andere telefoon als camera</b><span class="pill" id="pair-state" data-state="off">Uit</span></div>
+            <div id="pair-info" hidden>
+              <p class="muted">Zet een tweede telefoon of iPad bij het bord. Open daar Dubbel Uit, kies <b>Nieuw</b> → <b>Dit toestel als camera</b> en vul deze code in:</p>
+              <div class="pair-code num" id="pair-code">······</div>
+            </div>
+            <div class="quick">
+              <button type="button" class="btn" id="pair-start">Koppel een camera-telefoon</button>
+              <button type="button" class="btn" id="pair-stop" hidden>Ontkoppelen</button>
+            </div>
+          </div>
+          <div id="cam-ui">
           <div class="calib-hint" id="calib-hint" hidden></div>
           <div class="cam-box" id="cam-box">
             <video id="cam-video" playsinline muted></video>
@@ -595,9 +635,31 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
             </div>
             <p class="muted" style="font-size:14px;margin:0">Zet je telefoon stevig neer (statief of houder), schuin voor het bord en iets lager, met het hele bord in beeld. Klopt een herkende dart niet? Druk op Herstel en kies Bord om de juiste plek aan te tikken.</p>
           </details>
+          </div>
         </div>
       </div>
     </div>
+  </section>
+
+  <!-- Dit toestel als camera -->
+  <section id="screen-camdev" class="camdev" hidden>
+    <div class="camdev-head">
+      <b>Camera bij het bord</b>
+      <span class="pill" id="camdev-state" data-state="off">Niet verbonden</span>
+      <button type="button" class="stop-btn" id="camdev-leave">Stoppen</button>
+    </div>
+    <div class="panel camdev-join" id="camdev-join">
+      <label class="label" for="camdev-code">Code van het scorebord</label>
+      <input type="text" id="camdev-code" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="123456">
+      <button type="button" class="btn primary" id="camdev-connect">Verbinden</button>
+      <p class="muted">De code staat op je andere telefoon of iPad: start daar een wedstrijd, ga naar <b>Camera</b> en druk op <b>Koppel een camera-telefoon</b>.</p>
+    </div>
+    <div class="panel camdev-score" id="camdev-score" hidden>
+      <span class="label" id="camdev-who"></span>
+      <b class="num" id="camdev-rem"></b>
+      <span class="muted num" id="camdev-turn"></span>
+    </div>
+    <div id="camdev-slot"></div>
   </section>
 
   <!-- Around the Clock -->
@@ -724,6 +786,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="logic.js"></script>
+<script src="link.js"></script>
 <script src="vision.js"></script>
 <script src="app.js"></script>
 </body>

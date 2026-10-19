@@ -59,7 +59,7 @@
   var kpValue = "";
 
   // ── Schermen ───────────────────────────────────────────────────────────
-  var SCREENS = ["setup", "play", "result", "history", "atc"];
+  var SCREENS = ["setup", "play", "result", "history", "atc", "camdev"];
 
   function show(name) {
     SCREENS.forEach(function (s) { $("screen-" + s).hidden = s !== name; });
@@ -753,6 +753,7 @@
     renderMode();
     renderMarkers();
     drawOverlay();
+    sendState();
   }
 
   // ── Invoer ─────────────────────────────────────────────────────────────
@@ -779,7 +780,11 @@
     render();
     maybeBot();
   }
-  ["undo-btn", "undo-btn-2", "undo-btn-3"].forEach(function (id) { $(id).addEventListener("click", undo); });
+  ["undo-btn", "undo-btn-2"].forEach(function (id) { $(id).addEventListener("click", undo); });
+  $("undo-btn-3").addEventListener("click", function () {
+    if (camDevice) toBoard({ type: "undo" });
+    else undo();
+  });
 
   function humanDart(d) {
     if (!canInput()) return;
@@ -792,7 +797,10 @@
 
   function miss() { humanDart(L.dart(0, 0)); }
   $("miss-btn").addEventListener("click", miss);
-  $("miss-btn-2").addEventListener("click", miss);
+  $("miss-btn-2").addEventListener("click", function () {
+    if (camDevice) toBoard({ type: "miss" });
+    else miss();
+  });
 
   function afterEvent(ev) {
     if (ev && match.training) { trainingStep(ev); return; }
@@ -1634,6 +1642,14 @@
       frameWidth: FRAME_W,
       sensitivity: settings.camSens,
       onDart: function (hit) {
+        if (camDevice) {
+          // Camera-toestel: dart doorsturen naar het scorebord.
+          toBoard({ type: "dart", x: hit.x, y: hit.y, label: hit.label });
+          setCamStatus("ready", "Gezien: " + hit.label);
+          camDarts.push(hit);
+          drawOverlay();
+          return;
+        }
         if (awaitingPull) return;
         if (!canInput()) return;
         setCamStatus("ready", "Gezien: " + hit.label);
@@ -1641,6 +1657,7 @@
         drawOverlay();
       },
       onBigChange: function () {
+        if (camDevice) { camDarts = []; toBoard({ type: "pulled" }); drawOverlay(); return; }
         if (awaitingPull) {
           awaitingPull = false;
           $("cam-pulled").hidden = true;
@@ -1657,13 +1674,15 @@
   }
 
   function cameraTurnEnded() {
-    if (!detector) return;
+    if (!detector && !(host && host.connected())) return;
     awaitingPull = true;
     $("cam-pulled").hidden = false;
     setCamStatus("pull", "Haal je darts uit het bord");
+    sendState();
   }
 
   $("cam-pulled").addEventListener("click", function () {
+    if (camDevice) { camDarts = []; toBoard({ type: "pulled" }); }
     awaitingPull = false;
     $("cam-pulled").hidden = true;
     if (detector) detector.resetReference();
@@ -1737,7 +1756,7 @@
   }
 
   function drawOverlay() {
-    if ($("mode-camera").hidden) return;
+    if ($("mode-camera").hidden && !camDevice) return;
     sizeOverlay();
     var ctx = overlay.getContext("2d");
     var dpr = window.devicePixelRatio || 1;
@@ -1788,7 +1807,7 @@
       ctx.lineTo(p1.x, p1.y);
       ctx.stroke();
     }
-    var darts = match && match.leg.turn.darts.length ? match.leg.turn.darts : recentDarts;
+    var darts = camDevice ? camDarts : match && match.leg.turn.darts.length ? match.leg.turn.darts : recentDarts;
     darts.forEach(function (d) {
       if (d.x === undefined) return;
       var p = proj(d.x, d.y);
@@ -1803,6 +1822,168 @@
 
   window.addEventListener("resize", drawOverlay);
 
+  // ── Koppeling met een tweede toestel ───────────────────────────────────
+  var host = null; // scorebord: wacht op een camera-toestel
+  var join = null; // camera-toestel: verbonden met een scorebord
+  var camDevice = false;
+  var camDarts = []; // darts die het camera-toestel deze beurt zag (voor de overlay)
+
+  function setPill(id, state, text) {
+    $(id).dataset.state = state;
+    $(id).textContent = text;
+  }
+
+  function pairCode() {
+    var code = store.get("pairCode", null);
+    if (!code) { code = DartLink.newCode(); store.set("pairCode", code); }
+    return code;
+  }
+
+  function startHost() {
+    if (host) return;
+    store.set("pairHost", true);
+    $("pair-code").textContent = pairCode();
+    $("pair-info").hidden = false;
+    $("pair-start").hidden = true;
+    $("pair-stop").hidden = false;
+    host = new DartLink.Host(pairCode(), {
+      onState: function (state, text) {
+        setPill("pair-state", state, state === "on" ? "Verbonden" : state === "error" ? "Fout" : "Wacht");
+        $("mode-camera").classList.toggle("remote-on", state === "on");
+        $("pair-info").hidden = state === "on";
+        if (state === "on") { setCamStatus("ready", "Camera-telefoon verbonden"); toast("Camera verbonden"); sendState(); }
+        else if (text) setCamStatus(state === "error" ? "error" : "off", text);
+      },
+      onCode: function (code) {
+        store.set("pairCode", code);
+        $("pair-code").textContent = code;
+      },
+      onData: onRemote,
+    });
+  }
+
+  function stopHost() {
+    if (host) host.stop();
+    host = null;
+    store.del("pairHost");
+    $("pair-info").hidden = true;
+    $("pair-start").hidden = false;
+    $("pair-stop").hidden = true;
+    $("mode-camera").classList.remove("remote-on");
+    setPill("pair-state", "off", "Uit");
+    setCamStatus("off", stream ? "Camera kijkt mee" : "Camera staat uit");
+  }
+  $("pair-start").addEventListener("click", startHost);
+  $("pair-stop").addEventListener("click", stopHost);
+
+  function onRemote(msg) {
+    if (!msg || !match) return;
+    if (msg.type === "hello") { sendState(); return; }
+    if (msg.type === "dart") {
+      if (awaitingPull || !canInput()) return;
+      var hit = L.scoreAt(msg.x, msg.y);
+      hit.x = msg.x;
+      hit.y = msg.y;
+      setCamStatus("ready", "Camera: " + hit.label);
+      humanDart(hit);
+    } else if (msg.type === "miss") {
+      if (canInput()) miss();
+    } else if (msg.type === "undo") {
+      undo();
+    } else if (msg.type === "pulled") {
+      if (awaitingPull) {
+        awaitingPull = false;
+        $("cam-pulled").hidden = true;
+        setCamStatus("ready", "Klaar voor de volgende beurt");
+        sendState();
+      }
+    }
+  }
+
+  function sendState() {
+    if (!host || !host.connected()) return;
+    if (!match) { host.send({ type: "state", who: "Geen wedstrijd", rem: "", turn: "" }); return; }
+    var cur = match.players[match.leg.current];
+    var darts = match.leg.turn.darts;
+    host.send({
+      type: "state",
+      who: match.winner !== null ? match.players[match.winner].name + " wint!" : cur.name + (cur.bot ? " (bot) gooit" : " gooit"),
+      rem: match.winner !== null ? "" : L.currentRem(match),
+      turn: darts.map(function (d) { return d.label; }).join("  "),
+      pull: awaitingPull,
+    });
+  }
+
+  // Camera-toestel
+  function toBoard(msg) { if (join) join.send(msg); }
+
+  function enterCamDev() {
+    camDevice = true;
+    store.set("camdev", true);
+    cancelBot();
+    $("camdev-slot").appendChild($("cam-ui"));
+    show("camdev");
+    var code = store.get("joinCode", "");
+    $("camdev-code").value = code;
+    if (code && !join) connectCamDev(code);
+    drawOverlay();
+  }
+
+  function leaveCamDev() {
+    camDevice = false;
+    store.del("camdev");
+    if (join) join.stop();
+    join = null;
+    if (stream) stopCamera();
+    $("mode-camera").appendChild($("cam-ui"));
+    $("camdev-join").hidden = false;
+    $("camdev-score").hidden = true;
+    setPill("camdev-state", "off", "Niet verbonden");
+    show("setup");
+  }
+
+  function connectCamDev(code) {
+    if (join) join.stop();
+    store.set("joinCode", code);
+    join = new DartLink.Join(code, {
+      onState: function (state, text) {
+        setPill("camdev-state", state, state === "on" ? "Verbonden" : state === "error" ? "Niet gevonden" : "Verbinden");
+        $("camdev-join").hidden = state === "on";
+        $("camdev-score").hidden = state !== "on";
+        if (state === "on") {
+          if (!stream) startCamera();
+        } else if (text) {
+          setCamStatus(state === "error" ? "error" : "off", text);
+        }
+      },
+      onData: function (msg) {
+        if (!msg || msg.type !== "state") return;
+        $("camdev-who").textContent = msg.who;
+        $("camdev-rem").textContent = msg.rem;
+        $("camdev-turn").textContent = msg.turn || "";
+        if (msg.pull) {
+          awaitingPull = true;
+          $("cam-pulled").hidden = false;
+          setCamStatus("pull", "Haal je darts uit het bord");
+        } else if (awaitingPull) {
+          awaitingPull = false;
+          camDarts = [];
+          $("cam-pulled").hidden = true;
+          setCamStatus("ready", "Klaar voor de volgende beurt");
+          drawOverlay();
+        }
+      },
+    });
+  }
+
+  $("camdev-open").addEventListener("click", enterCamDev);
+  $("camdev-leave").addEventListener("click", leaveCamDev);
+  $("camdev-connect").addEventListener("click", function () {
+    var code = $("camdev-code").value.replace(/\D/g, "");
+    if (code.length !== 6) { toast("Vul de 6 cijfers van het scorebord in"); return; }
+    connectCamDev(code);
+  });
+
   // ── Start ──────────────────────────────────────────────────────────────
   // Als app op het beginscherm: offline werken via de service worker.
   if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) {
@@ -1811,6 +1992,8 @@
   buildBoard();
   syncVoice();
   if ("speechSynthesis" in window) speechSynthesis.getVoices();
-  show(match ? "play" : atc && !atc.done ? "atc" : "setup");
+  if (store.get("camdev", false)) enterCamDev();
+  else show(match ? "play" : atc && !atc.done ? "atc" : "setup");
+  if (!camDevice && store.get("pairHost", false)) startHost();
   maybeBot();
 })();

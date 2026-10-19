@@ -30,6 +30,16 @@ Een darts-scorebord als app voor je telefoon.
 - **Dart naast het bord?** Druk op **Mis (0)**.
 - **Spookdarts of gemiste darts?** Pas de **Gevoeligheid** aan onder *Camera-instellingen*.
 
+## Tweede toestel als camera
+
+Je kunt een oude telefoon of iPad als camera bij het bord zetten, terwijl je eigen telefoon of tablet het scorebord is.
+
+1. **Scorebord:** start een wedstrijd → **Camera** → **Koppel een camera-telefoon**. Je krijgt een code van 6 cijfers.
+2. **Camera-toestel:** open Dubbel Uit → **Nieuw** → **Dit toestel als camera**. Vul de code in en druk op **Verbinden**.
+3. Kalibreer op het camera-toestel en gooi. De darts verschijnen op het scorebord.
+
+Op het camera-toestel kun je ook op **Mis**, **Herstel** en **Darts zijn eruit** drukken. Beide toestellen hebben internet nodig. De koppeling gebruikt [PeerJS](https://peerjs.com/) (MIT-licentie, zie `vendor/peerjs-LICENSE`): de toestellen vinden elkaar via de gratis PeerJS-server en praten daarna rechtstreeks met elkaar.
+
 ## Code
 
-Gewone HTML en JavaScript, zonder bouwstap: `logic.js` (regels, bot, uitgooiroutes), `vision.js` (camera) en `app.js` (scherm). Tests draaien met `node --test tests/logic.test.js tests/vision.test.js`.
+Gewone HTML en JavaScript, zonder bouwstap: `logic.js` (regels, bot, uitgooiroutes, training), `vision.js` (camera), `link.js` (koppeling tussen toestellen) en `app.js` (scherm). Tests draaien met `node --test tests/logic.test.js tests/vision.test.js`.
