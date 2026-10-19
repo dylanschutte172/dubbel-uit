@@ -602,6 +602,43 @@
     $("kp-display").textContent = kpValue || "0";
   }
 
+  // Keuze-popup: ask("Titel", "Vraag", [{ big: "2", small: "darts", value: 2 }], function (value) {...})
+  function ask(title, question, options, onPick) {
+    $("finish-title").textContent = title;
+    $("finish-q").textContent = question;
+    var box = $("finish-darts");
+    box.textContent = "";
+    options.forEach(function (o) {
+      var b = document.createElement("button");
+      b.type = "button";
+      var big = document.createElement("b");
+      big.textContent = o.big;
+      b.appendChild(big);
+      if (o.small) b.appendChild(document.createTextNode(o.small));
+      b.addEventListener("click", function () {
+        $("finish-ask").hidden = true;
+        onPick(o.value);
+      });
+      box.appendChild(b);
+    });
+    $("finish-ask").hidden = false;
+    box.querySelector("button").focus();
+  }
+
+  function dartOptions(from, to) {
+    var out = [];
+    for (var n = from; n <= to; n++) out.push({ big: String(n), small: n === 1 ? "dart" : "darts", value: n });
+    return out;
+  }
+
+  function commitTotal(total, dartsToFinish, dblDarts) {
+    pushUndo();
+    kpValue = "";
+    renderKeypad();
+    recentDarts = [];
+    afterEvent(L.addTurnTotal(match, total, dartsToFinish, dblDarts));
+  }
+
   function submitTotal() {
     if (!canInput()) return;
     if (match.leg.turn.darts.length) {
@@ -614,38 +651,32 @@
       return;
     }
     var rem = match.leg.turn.start;
+    var dbl = match.cfg.doubleOut;
     if (total === rem && rem > 0) {
-      var minDarts = match.cfg.doubleOut ? (L.checkout(rem, 1) ? 1 : L.checkout(rem, 2) ? 2 : L.checkout(rem, 3) ? 3 : 0) : Math.ceil(rem / 60);
+      var minDarts = dbl ? (L.checkout(rem, 1) ? 1 : L.checkout(rem, 2) ? 2 : L.checkout(rem, 3) ? 3 : 0) : Math.ceil(rem / 60);
       if (!minDarts) {
         toast(rem + " kun je niet uitgooien");
         return;
       }
-      var box = $("finish-darts");
-      box.textContent = "";
-      for (var n = minDarts; n <= 3; n++) {
-        (function (n) {
-          var b = document.createElement("button");
-          b.type = "button";
-          b.innerHTML = "<b>" + n + "</b>" + (n === 1 ? "dart" : "darts");
-          b.addEventListener("click", function () {
-            $("finish-ask").hidden = true;
-            pushUndo();
-            kpValue = "";
-            renderKeypad();
-            afterEvent(L.addTurnTotal(match, total, n));
-          });
-          box.appendChild(b);
-        })(n);
-      }
-      $("finish-ask").hidden = false;
-      box.querySelector("button").focus();
+      ask("Uitgegooid!", "In hoeveel darts?", dartOptions(minDarts, 3), function (n) {
+        if (!dbl || n === 1) { commitTotal(total, n, dbl ? 1 : 0); return; }
+        // Voor je uitgooipercentage: hoeveel van die darts gingen naar een dubbel?
+        ask("Op de dubbel", "Hoeveel darts gooide je op een dubbel?", dartOptions(1, n), function (d) {
+          commitTotal(total, n, d);
+        });
+      });
       return;
     }
-    pushUndo();
-    kpValue = "";
-    renderKeypad();
-    recentDarts = [];
-    afterEvent(L.addTurnTotal(match, total));
+    // Stond je op een uitgooi (50 of minder) en ging hij er niet uit? Vraag de darts op de dubbel.
+    if (dbl && rem <= 50 && L.checkout(rem, 3)) {
+      var opts = dartOptions(0, 3);
+      opts[0].small = "geen";
+      ask("Op de dubbel", "Hoeveel darts gooide je op een dubbel?", opts, function (d) {
+        commitTotal(total, undefined, d);
+      });
+      return;
+    }
+    commitTotal(total);
   }
 
   // Invoermodus
@@ -709,20 +740,34 @@
     cancelBot();
     lastResult = match;
     var entry = {
+      v: 2,
       date: match.endedAt || Date.now(),
       start: match.cfg.start,
       legs: match.cfg.legs,
       sets: match.cfg.sets,
+      doubleOut: match.cfg.doubleOut,
       winner: match.winner,
-      players: match.players.map(function (p) {
+      players: match.players.map(function (p, i) {
+        var st = p.stats;
         return {
           name: p.name,
           bot: p.bot ? p.bot.avg : null,
-          avg: Math.round(L.threeDartAverage(p.stats) * 10) / 10,
-          sets: p.stats.setsWon,
-          legs: p.stats.legsWon,
-          s180: p.stats.s180,
-          highOut: p.stats.highOut,
+          won: i === match.winner,
+          avg: Math.round(L.threeDartAverage(st) * 10) / 10,
+          sets: st.setsWon,
+          legs: st.legsWon,
+          legsPlayed: st.legsPlayed,
+          points: st.points,
+          darts: st.darts,
+          f9Points: st.f9Points,
+          f9Darts: st.f9Darts,
+          dblDarts: st.dblDarts,
+          dblHits: st.dblHits,
+          s180: st.s180,
+          s140: st.s140,
+          s100: st.s100,
+          highOut: st.highOut,
+          bestLeg: st.bestLeg,
         };
       }),
     };
@@ -735,36 +780,48 @@
     show("result");
   }
 
+  function pct(stats) {
+    var c = L.checkoutPercentage(stats);
+    return c === null ? "–" : Math.round(c) + "% (" + stats.dblHits + "/" + stats.dblDarts + ")";
+  }
+
   function renderResult() {
     var m = lastResult;
     var w = m.players[m.winner];
     $("result-title").textContent = w.bot ? "De bot wint" : w.name + " wint!";
-    var t = $("result-table");
     var rows = [
-      ["", function (p) { return p.name; }],
       [m.cfg.sets > 1 ? "Sets" : "Legs", function (p) { return m.cfg.sets > 1 ? p.stats.setsWon : p.stats.legsWon; }],
       ["Gemiddelde", function (p) { return L.threeDartAverage(p.stats).toFixed(1); }],
-      ["Darts", function (p) { return p.stats.darts; }],
+      ["First 9", function (p) { return L.firstNineAverage(p.stats).toFixed(1); }],
+      ["Uitgooi %", function (p) { return m.cfg.doubleOut ? pct(p.stats) : "–"; }],
+      ["Hoogste uit", function (p) { return p.stats.highOut || "–"; }],
+      ["Snelste leg", function (p) { return p.stats.bestLeg ? p.stats.bestLeg + " darts" : "–"; }],
       ["180", function (p) { return p.stats.s180; }],
       ["140+", function (p) { return p.stats.s140; }],
       ["100+", function (p) { return p.stats.s100; }],
       ["Beste beurt", function (p) { return p.stats.best; }],
-      ["Hoogste uitgooi", function (p) { return p.stats.highOut || "–"; }],
+      ["Darts", function (p) { return p.stats.darts; }],
     ];
+    var t = $("result-table");
     t.textContent = "";
     var thead = document.createElement("thead");
     var trh = document.createElement("tr");
-    rows.forEach(function (r) {
+    trh.appendChild(document.createElement("th"));
+    m.players.forEach(function (p) {
       var th = document.createElement("th");
-      th.textContent = r[0];
+      th.textContent = p.name;
       trh.appendChild(th);
     });
     thead.appendChild(trh);
     t.appendChild(thead);
     var tbody = document.createElement("tbody");
-    m.players.forEach(function (p) {
+    rows.forEach(function (r) {
       var tr = document.createElement("tr");
-      rows.forEach(function (r) {
+      var th = document.createElement("th");
+      th.scope = "row";
+      th.textContent = r[0];
+      tr.appendChild(th);
+      m.players.forEach(function (p) {
         var td = document.createElement("td");
         td.textContent = r[1](p);
         tr.appendChild(td);
@@ -782,35 +839,254 @@
   });
   $("new-btn").addEventListener("click", function () { show("setup"); });
 
-  function renderHistory() {
-    var box = $("history");
-    box.textContent = "";
-    var hist = store.get("history", []);
-    if (!hist.length) {
-      var p = document.createElement("p");
-      p.className = "empty";
-      p.textContent = "Nog geen wedstrijden gespeeld. Je uitslagen verschijnen hier.";
-      box.appendChild(p);
-      return;
-    }
+  // ── Statistiek ─────────────────────────────────────────────────────────
+  var DAY = 86400000;
+
+  function keyOf(name) { return String(name || "").trim().toLowerCase(); }
+
+  function humanNames(hist) {
+    // Alle menselijke spelers, vaakst gespeeld eerst.
+    var count = {};
+    var shown = {};
     hist.forEach(function (h) {
+      h.players.forEach(function (p) {
+        if (p.bot) return;
+        var k = keyOf(p.name);
+        count[k] = (count[k] || 0) + 1;
+        if (!shown[k]) shown[k] = p.name;
+      });
+    });
+    return Object.keys(count).sort(function (a, b) { return count[b] - count[a]; }).map(function (k) { return { key: k, name: shown[k] }; });
+  }
+
+  function entriesFor(hist, key, from, to) {
+    return hist.filter(function (h) { return h.date >= from && h.date < to; })
+      .map(function (h) {
+        var me = h.players.filter(function (p) { return !p.bot && keyOf(p.name) === key; })[0];
+        return me ? { h: h, me: me } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function aggregate(rows) {
+    var a = { matches: rows.length, wins: 0, points: 0, darts: 0, f9Points: 0, f9Darts: 0, dblDarts: 0, dblHits: 0,
+      s180: 0, s140: 0, s100: 0, highOut: 0, bestLeg: 0, legsWon: 0, legsPlayed: 0 };
+    rows.forEach(function (r) {
+      var p = r.me;
+      var won = p.won !== undefined ? p.won : r.h.players[r.h.winner] === p;
+      if (won) a.wins++;
+      ["points", "darts", "f9Points", "f9Darts", "dblDarts", "dblHits", "s180", "s140", "s100", "legsPlayed"].forEach(function (k) {
+        a[k] += p[k] || 0;
+      });
+      if (p.legsPlayed) a.legsWon += p.legs || 0;
+      if ((p.highOut || 0) > a.highOut) a.highOut = p.highOut;
+      if (p.bestLeg && (!a.bestLeg || p.bestLeg < a.bestLeg)) a.bestLeg = p.bestLeg;
+    });
+    a.avg = a.darts ? (a.points / a.darts) * 3 : null;
+    a.f9 = a.f9Darts ? (a.f9Points / a.f9Darts) * 3 : null;
+    a.co = a.dblDarts ? (a.dblHits / a.dblDarts) * 100 : null;
+    return a;
+  }
+
+  function fmt1(v) { return v === null || v === undefined ? "–" : v.toFixed(1).replace(".", ","); }
+
+  $("st-period").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    settings.statsDays = Number(b.dataset.v);
+    saveSettings();
+    renderHistory();
+  });
+  $("st-player").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    settings.statsPlayer = b.dataset.v;
+    saveSettings();
+    renderHistory();
+  });
+
+  function renderHistory() {
+    var hist = store.get("history", []);
+    var names = humanNames(hist);
+    var days = settings.statsDays === undefined ? 30 : settings.statsDays;
+    pressSeg("st-period", days);
+
+    var key = settings.statsPlayer;
+    if (!names.some(function (n) { return n.key === key; })) {
+      var mine = keyOf(settings.me || "Jij");
+      key = names.some(function (n) { return n.key === mine; }) ? mine : names.length ? names[0].key : "";
+    }
+    var pl = $("st-player");
+    pl.textContent = "";
+    pl.classList.add("scroll");
+    names.forEach(function (n) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.dataset.v = n.key;
+      b.textContent = n.name;
+      b.setAttribute("aria-pressed", String(n.key === key));
+      pl.appendChild(b);
+    });
+    pl.parentNode.hidden = names.length < 2;
+
+    var now = Date.now();
+    var from = days ? now - days * DAY : 0;
+    var rows = entriesFor(hist, key, from, now + 1);
+    $("st-body").hidden = !rows.length;
+    $("st-empty").hidden = !!rows.length;
+    if (!rows.length) return;
+
+    var a = aggregate(rows);
+    $("st-avg").textContent = fmt1(a.avg);
+    var delta = $("st-delta");
+    delta.textContent = "";
+    if (days && a.avg !== null) {
+      var prev = aggregate(entriesFor(hist, key, from - days * DAY, from));
+      if (prev.avg !== null) {
+        var d = a.avg - prev.avg;
+        var b = document.createElement("b");
+        b.textContent = (d >= 0 ? "▲ " : "▼ ") + fmt1(Math.abs(d));
+        delta.append(b, document.createTextNode(" t.o.v. de " + (days === 7 ? "week" : "periode") + " daarvoor (" + fmt1(prev.avg) + ")"));
+      }
+    }
+    var lvl = null;
+    L.BOT_LEVELS.forEach(function (l) { if (a.avg !== null && a.avg >= l.avg - 5) lvl = l; });
+    $("st-level").textContent = a.avg === null ? "" : lvl ? "Dat is ongeveer " + lvl.name + "-niveau. Probeer de bot op " + Math.round(a.avg + 5) + " eens." : "Begin tegen de Starter-bot.";
+
+    var tiles = [
+      ["First 9", fmt1(a.f9), "gemiddelde eerste 9 darts"],
+      ["Uitgooi %", a.co === null ? "–" : Math.round(a.co) + "%", a.dblHits + " van " + a.dblDarts + " op de dubbel"],
+      ["Gewonnen", a.wins + "/" + a.matches, Math.round((a.wins / a.matches) * 100) + "% van je wedstrijden"],
+      ["Legs", a.legsWon + "/" + a.legsPlayed, a.legsPlayed ? Math.round((a.legsWon / a.legsPlayed) * 100) + "% gewonnen" : ""],
+      ["Hoogste uitgooi", a.highOut || "–", ""],
+      ["Snelste leg", a.bestLeg ? a.bestLeg : "–", a.bestLeg ? "darts" : ""],
+      ["180's", a.s180, ""],
+      ["140+ / 100+", a.s140 + " / " + a.s100, ""],
+    ];
+    var box = $("st-tiles");
+    box.textContent = "";
+    tiles.forEach(function (t) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      var lab = document.createElement("span");
+      lab.className = "label";
+      lab.textContent = t[0];
+      var val = document.createElement("b");
+      val.textContent = t[1];
+      el.append(lab, val);
+      if (t[2]) {
+        var sm = document.createElement("small");
+        sm.textContent = t[2];
+        el.appendChild(sm);
+      }
+      box.appendChild(el);
+    });
+
+    var chrono = rows.slice().reverse().filter(function (r) { return r.me.avg > 0; });
+    drawChart(chrono);
+
+    var list = $("history");
+    list.textContent = "";
+    rows.forEach(function (r) {
+      var h = r.h, me = r.me;
+      var won = me.won !== undefined ? me.won : h.players[h.winner] === me;
       var item = document.createElement("div");
       item.className = "panel item";
+      var badge = document.createElement("span");
+      badge.className = "badge" + (won ? " win" : "");
+      badge.textContent = won ? "Winst" : "Verlies";
       var title = document.createElement("b");
-      title.textContent = h.players.map(function (p) { return p.name + (p.bot ? " (" + p.bot + ")" : ""); }).join(" – ");
+      title.textContent = h.players.map(function (p) { return p.bot ? "Bot (" + p.bot + ")" : p.name; }).join(" – ");
       var score = document.createElement("span");
       score.className = "num";
       score.textContent = h.players.map(function (p) { return h.sets > 1 ? p.sets : p.legs; }).join(" – ") + (h.sets > 1 ? " sets" : " legs");
-      var avg = document.createElement("span");
-      avg.className = "muted num";
-      avg.textContent = "Gem. " + h.players.map(function (p) { return p.avg.toFixed(1); }).join(" / ");
+      var det = document.createElement("span");
+      det.className = "muted num";
+      var co = me.dblDarts ? " · uit " + Math.round((me.dblHits / me.dblDarts) * 100) + "%" : "";
+      var f9 = me.f9Darts ? " · F9 " + fmt1((me.f9Points / me.f9Darts) * 3) : "";
+      det.textContent = "Gem. " + fmt1(me.avg) + f9 + co;
       var when = document.createElement("span");
       when.className = "muted";
       when.textContent = new Date(h.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) + " · " + h.start;
-      item.append(title, score, avg, when);
-      box.appendChild(item);
+      item.append(badge, title, score, det, when);
+      list.appendChild(item);
     });
   }
+
+  function drawChart(rows) {
+    var box = $("st-chart");
+    box.textContent = "";
+    if (rows.length < 2) {
+      var p = document.createElement("p");
+      p.className = "chart-empty";
+      p.textContent = "Speel minstens 2 wedstrijden om hier je lijn te zien.";
+      box.appendChild(p);
+      return;
+    }
+    var W = Math.max(280, box.clientWidth || 600), H = 220;
+    var pad = { l: 34, r: 14, t: 14, b: 26 };
+    var vals = rows.map(function (r) { return r.me.avg; });
+    var lo = Math.floor((Math.min.apply(null, vals) - 2) / 10) * 10;
+    var hi = Math.ceil((Math.max.apply(null, vals) + 2) / 10) * 10;
+    if (hi - lo < 20) hi = lo + 20;
+    var step = hi - lo > 60 ? 20 : 10;
+    var x = function (i) { return pad.l + (i / (rows.length - 1)) * (W - pad.l - pad.r); };
+    var y = function (v) { return pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b); };
+    var svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Gemiddelde per wedstrijd, van " + fmt1(vals[0]) + " naar " + fmt1(vals[vals.length - 1]));
+    for (var g = lo; g <= hi; g += step) {
+      el("line", { x1: pad.l, x2: W - pad.r, y1: y(g), y2: y(g), stroke: "var(--line)", "stroke-width": 1 }, svg);
+      var t = el("text", { x: pad.l - 6, y: y(g) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)" }, svg);
+      t.textContent = g;
+    }
+    var dateLabel = function (r) { return new Date(r.h.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" }); };
+    var t0 = el("text", { x: pad.l, y: H - 6, "font-size": 11, fill: "var(--muted)" }, svg);
+    t0.textContent = dateLabel(rows[0]);
+    var t1 = el("text", { x: W - pad.r, y: H - 6, "font-size": 11, fill: "var(--muted)", "text-anchor": "end" }, svg);
+    t1.textContent = dateLabel(rows[rows.length - 1]);
+    var d = vals.map(function (v, i) { return (i ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1); }).join(" ");
+    el("path", { d: d, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }, svg);
+    var cross = el("line", { y1: pad.t, y2: H - pad.b, stroke: "var(--muted)", "stroke-width": 1, visibility: "hidden" }, svg);
+    var dot = el("circle", { r: 5, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2, visibility: "hidden" }, svg);
+    var last = rows.length - 1;
+    el("circle", { cx: x(last), cy: y(vals[last]), r: 5, fill: "var(--accent)", stroke: "var(--surface)", "stroke-width": 2 }, svg);
+    var endLabel = el("text", { x: x(last) - 8, y: y(vals[last]) - 10, "text-anchor": "end", "font-size": 12, "font-weight": 600, fill: "var(--fg)" }, svg);
+    endLabel.textContent = fmt1(vals[last]);
+    box.appendChild(svg);
+    var tip = document.createElement("div");
+    tip.className = "tip";
+    tip.hidden = true;
+    box.appendChild(tip);
+
+    function hover(evt) {
+      var rect = svg.getBoundingClientRect();
+      var px = ((evt.clientX - rect.left) / rect.width) * W;
+      var i = Math.round(((px - pad.l) / (W - pad.l - pad.r)) * (rows.length - 1));
+      i = Math.max(0, Math.min(rows.length - 1, i));
+      var r = rows[i];
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(vals[i])); dot.setAttribute("visibility", "visible");
+      var opp = r.h.players.filter(function (p) { return p !== r.me; }).map(function (p) { return p.bot ? "bot " + p.bot : p.name; }).join(", ");
+      tip.textContent = "";
+      var big = document.createElement("b");
+      big.textContent = fmt1(vals[i]);
+      tip.append(big, document.createTextNode(dateLabel(r) + (opp ? " · tegen " + opp : "")));
+      tip.hidden = false;
+      var left = (x(i) / W) * rect.width;
+      tip.style.left = Math.max(70, Math.min(rect.width - 70, left)) + "px";
+    }
+    svg.addEventListener("pointermove", hover);
+    svg.addEventListener("pointerdown", hover);
+    svg.addEventListener("pointerleave", function () {
+      cross.setAttribute("visibility", "hidden");
+      dot.setAttribute("visibility", "hidden");
+      tip.hidden = true;
+    });
+  }
+
+  window.addEventListener("resize", function () { if (!$("screen-history").hidden) renderHistory(); });
 
   // ── Camera ─────────────────────────────────────────────────────────────
   var FRAME_W = 640;

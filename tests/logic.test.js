@@ -95,3 +95,39 @@ test("bot gooit een leg uit", () => {
   }
   assert.equal(m.winner, 0);
 });
+
+test("first 9, dubbels en snelste leg worden bijgehouden", () => {
+  const m = L.createMatch({ start: 141, legs: 2, sets: 1, players: [{ name: "A" }, { name: "B" }] });
+  // A: T20 T20 = 120 → 21 over; B gooit 0; A: S1 (op 21, geen dubbelkans), D10 mis (S10), D10 raak
+  L.addDart(m, L.dart(3, 20)); L.addDart(m, L.dart(3, 20)); L.addDart(m, L.dart(1, 1)); // 141-121 = 20
+  L.addTurnTotal(m, 0);
+  L.addDart(m, L.dart(1, 10)); // op 20 (dubbelkans) → mis, 10 over
+  L.addDart(m, L.dart(1, 5));  // op 10 (dubbelkans) → 5 over
+  L.addDart(m, L.dart(0, 0));  // op 5: geen dubbelkans (oneven)
+  L.addTurnTotal(m, 0);
+  L.addDart(m, L.dart(1, 1));  // op 5: geen kans → 4
+  const ev = L.addDart(m, L.dart(2, 2)); // op 4: raak
+  assert.equal(ev.type, "leg");
+  const s = m.players[0].stats;
+  assert.equal(s.dblDarts, 3);
+  assert.equal(s.dblHits, 1);
+  assert.equal(Math.round(L.checkoutPercentage(s)), 33);
+  assert.equal(s.f9Darts, 8); // 3 + 3 + 2 darts in de eerste drie beurten
+  assert.equal(s.f9Points, 121 + 15 + 5);
+  assert.equal(s.bestLeg, 8);
+  assert.equal(s.legsPlayed, 1);
+  assert.equal(m.players[1].stats.legsPlayed, 1);
+  assert.equal(L.checkoutPercentage(m.players[1].stats), null);
+});
+
+test("cijferinvoer: darts op de dubbel worden meegegeven", () => {
+  const m = L.createMatch({ start: 40, legs: 1, sets: 1, players: [{ name: "A" }] });
+  L.addTurnTotal(m, 0, undefined, 3); // 3 keer mis op D20
+  L.addTurnTotal(m, 40, 2, 2);        // in 2 darts uit, beide op de dubbel
+  const s = m.players[0].stats;
+  assert.equal(s.dblDarts, 5);
+  assert.equal(s.dblHits, 1);
+  assert.equal(L.isOneDartFinish(40), true);
+  assert.equal(L.isOneDartFinish(41), false);
+  assert.equal(L.isOneDartFinish(50), true);
+});

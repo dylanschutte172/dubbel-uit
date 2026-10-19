@@ -241,7 +241,18 @@
 
   // ── Wedstrijd ──────────────────────────────────────────────────────────
   function newStats() {
-    return { points: 0, darts: 0, s180: 0, s140: 0, s100: 0, highOut: 0, legsWon: 0, setsWon: 0, best: 0 };
+    return {
+      points: 0, darts: 0, s180: 0, s140: 0, s100: 0, highOut: 0, legsWon: 0, setsWon: 0, best: 0,
+      f9Points: 0, f9Darts: 0, // eerste 9 darts (3 beurten) van elke leg
+      dblDarts: 0, dblHits: 0, // darts op een uitgooi-dubbel en hoeveel daarvan raak
+      legsPlayed: 0, bestLeg: 0, // aantal darts in de snelst gewonnen leg
+      s60: 0, // beurten van 60 tot en met 99
+    };
+  }
+
+  function isOneDartFinish(rem) {
+    // Kun je dit met één dart uitgooien? Dan telt elke dart hierop als "dart op de dubbel".
+    return rem === 50 || (rem >= 2 && rem <= 40 && rem % 2 === 0);
   }
 
   function createMatch(cfg) {
@@ -287,16 +298,26 @@
     return rem;
   }
 
-  function recordTurn(match, total, dartsUsed, bust, finished, darts) {
+  function recordTurn(match, total, dartsUsed, bust, finished, darts, dblDarts) {
     var leg = match.leg;
     var p = match.players[leg.current];
     var scored = bust ? 0 : total;
     p.stats.points += scored;
     p.stats.darts += dartsUsed;
+    if (!leg.dartsBy) leg.dartsBy = match.players.map(function () { return 0; });
+    leg.dartsBy[leg.current] += dartsUsed;
+    var turnNo = leg.turns.filter(function (t) { return t.player === leg.current; }).length;
+    if (turnNo < 3) {
+      p.stats.f9Points += scored;
+      p.stats.f9Darts += dartsUsed;
+    }
+    p.stats.dblDarts += dblDarts || 0;
+    if (finished && match.cfg.doubleOut) p.stats.dblHits++;
     if (!bust) {
       if (scored === 180) p.stats.s180++;
       else if (scored >= 140) p.stats.s140++;
       else if (scored >= 100) p.stats.s100++;
+      else if (scored >= 60) p.stats.s60++;
       if (scored > p.stats.best) p.stats.best = scored;
     }
     leg.turns.push({ player: leg.current, total: scored, darts: darts, bust: bust, left: bust ? leg.turn.start : leg.turn.start - total });
@@ -317,6 +338,9 @@
     var w = match.leg.current;
     var p = match.players[w];
     p.stats.legsWon++;
+    var legDarts = match.leg.dartsBy ? match.leg.dartsBy[w] : 0;
+    if (legDarts && (!p.stats.bestLeg || legDarts < p.stats.bestLeg)) p.stats.bestLeg = legDarts;
+    match.players.forEach(function (pl) { pl.stats.legsPlayed++; });
     match.legsInSet[w]++;
     var event = { type: "leg", player: w, score: checkoutScore };
     if (match.legsInSet[w] >= match.cfg.legs) {
@@ -347,18 +371,21 @@
     var rem = currentRem(match);
     var res = applyDart(rem, d, match.cfg.doubleOut);
     var stored = { mult: d.mult, num: d.num, score: d.score, label: d.label, isDouble: d.isDouble };
+    if (match.cfg.doubleOut && isOneDartFinish(rem)) stored.atDouble = true;
     if (d.x !== undefined) { stored.x = d.x; stored.y = d.y; }
     leg.turn.darts.push(stored);
     var darts = leg.turn.darts.slice();
     var total = leg.turn.start - (res.bust ? rem : res.rem);
-    if (res.bust) return recordTurn(match, total, darts.length, true, false, darts);
-    if (res.finished) return recordTurn(match, leg.turn.start, darts.length, false, true, darts);
-    if (darts.length === 3) return recordTurn(match, total, 3, false, false, darts);
+    var dbl = darts.filter(function (x) { return x.atDouble; }).length;
+    if (res.bust) return recordTurn(match, total, darts.length, true, false, darts, dbl);
+    if (res.finished) return recordTurn(match, leg.turn.start, darts.length, false, true, darts, dbl);
+    if (darts.length === 3) return recordTurn(match, total, 3, false, false, darts, dbl);
     return null;
   }
 
-  function addTurnTotal(match, total, dartsToFinish) {
-    // Hele beurt in één keer invoeren (zoals op een scorebord). dartsToFinish alleen bij uitgooien.
+  function addTurnTotal(match, total, dartsToFinish, dblDarts) {
+    // Hele beurt in één keer invoeren (zoals op een scorebord). dartsToFinish alleen bij uitgooien;
+    // dblDarts = hoeveel darts op een uitgooi-dubbel gingen (vraagt de app als het ertoe doet).
     if (match.winner !== null) return null;
     var leg = match.leg;
     var rem = leg.turn.start;
@@ -366,11 +393,21 @@
     var bust = next < 0 || (match.cfg.doubleOut && next === 1);
     var finished = next === 0;
     var used = finished ? dartsToFinish || 3 : 3;
-    return recordTurn(match, total, used, bust, finished && !bust, []);
+    if (dblDarts === undefined) dblDarts = finished && !bust && match.cfg.doubleOut ? 1 : 0;
+    return recordTurn(match, total, used, bust, finished && !bust, [], dblDarts);
   }
 
   function threeDartAverage(stats) {
     return stats.darts ? (stats.points / stats.darts) * 3 : 0;
+  }
+
+  function firstNineAverage(stats) {
+    return stats.f9Darts ? (stats.f9Points / stats.f9Darts) * 3 : 0;
+  }
+
+  function checkoutPercentage(stats) {
+    // null als er (nog) geen darts op een dubbel zijn gegooid.
+    return stats.dblDarts ? (stats.dblHits / stats.dblDarts) * 100 : null;
   }
 
   var api = {
@@ -395,6 +432,9 @@
     addDart: addDart,
     addTurnTotal: addTurnTotal,
     threeDartAverage: threeDartAverage,
+    firstNineAverage: firstNineAverage,
+    checkoutPercentage: checkoutPercentage,
+    isOneDartFinish: isOneDartFinish,
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;

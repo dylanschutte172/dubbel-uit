@@ -234,6 +234,33 @@ table.stats { border-collapse: collapse; width: 100%; font-variant-numeric: tabu
 table.stats th, table.stats td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
 table.stats th:first-child, table.stats td:first-child { text-align: left; }
 table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+.stats-screen { display: grid; gap: 14px; }
+.stats-screen[hidden] { display: none; }
+#st-body { display: grid; gap: 14px; }
+.stats-filters { display: grid; gap: 12px; }
+.seg.scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.seg.scroll button { flex: none; }
+.hero { display: grid; gap: 4px; }
+.hero-value { font: 700 64px/1 var(--font-display); }
+.hero-sub { color: var(--muted); font-size: 15px; }
+.hero-sub b { color: var(--fg); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 4px; min-width: 0; }
+.tile .label { letter-spacing: 0.04em; }
+.tile b { font: 700 30px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.tile small { color: var(--muted); font-size: 13px; }
+.chart-panel h3, .section-title { margin: 0; font: 600 18px/1.2 var(--font-display); text-transform: uppercase; letter-spacing: 0.04em; }
+.chart { position: relative; margin-top: 10px; }
+.chart svg { display: block; width: 100%; height: 220px; overflow: visible; touch-action: pan-y; }
+.chart .tip {
+  position: absolute; top: 0; pointer-events: none; background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 10px; font-size: 13px; white-space: nowrap; transform: translateX(-50%); box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+.chart .tip b { font: 700 18px/1.1 var(--font-display); display: block; }
+.chart-empty { color: var(--muted); padding: 30px 0; text-align: center; }
+.history .item .badge { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.history .item .badge.win { color: var(--accent); border-color: var(--accent); }
+table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); }
 .history { display: grid; gap: 10px; }
 .history .item { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
 .history .item b { font: 600 20px/1.2 var(--font-display); text-transform: uppercase; }
@@ -274,6 +301,9 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
   .presets button { flex: 0 0 58px; padding: 10px 0; }
   .keypad { gap: 6px; }
   .keypad button { padding: 0; min-height: 56px; font-size: 28px; }
+  table.stats th, table.stats td { padding: 8px 6px; font-size: 15px; }
+  table.stats tbody th { white-space: normal; }
+  .result h2 { font-size: 34px; }
   .keypad .undo-key { font: 600 17px/1 var(--font-body); }
   #mode-board p { display: none; }
   .setup .panel { padding: 14px; gap: 14px; }
@@ -327,7 +357,7 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
     <nav class="tabs" aria-label="Schermen">
       <button type="button" data-screen="setup">Nieuw</button>
       <button type="button" data-screen="play">Spel</button>
-      <button type="button" data-screen="history">Uitslagen</button>
+      <button type="button" data-screen="history">Statistiek</button>
     </nav>
     <button type="button" class="icon-btn" id="voice-toggle" aria-pressed="true" title="Scores laten omroepen">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -502,8 +532,38 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
   </section>
 
   <!-- Geschiedenis -->
-  <section id="screen-history" hidden>
-    <div class="history" id="history"></div>
+  <section id="screen-history" class="stats-screen" hidden>
+    <div class="stats-filters">
+      <div class="field">
+        <span class="label">Speler</span>
+        <div class="seg" id="st-player"></div>
+      </div>
+      <div class="field">
+        <span class="label">Periode</span>
+        <div class="seg" id="st-period">
+          <button type="button" data-v="7">7 dagen</button>
+          <button type="button" data-v="30">30 dagen</button>
+          <button type="button" data-v="90">3 maanden</button>
+          <button type="button" data-v="0">Alles</button>
+        </div>
+      </div>
+    </div>
+    <div id="st-body">
+      <div class="panel hero">
+        <span class="label">3-darts gemiddelde</span>
+        <div class="hero-value num" id="st-avg">–</div>
+        <div class="hero-sub" id="st-delta"></div>
+        <div class="hero-sub" id="st-level"></div>
+      </div>
+      <div class="tiles" id="st-tiles"></div>
+      <div class="panel chart-panel">
+        <h3>Gemiddelde per wedstrijd</h3>
+        <div class="chart" id="st-chart"></div>
+      </div>
+      <h3 class="section-title">Wedstrijden</h3>
+      <div class="history" id="history"></div>
+    </div>
+    <p class="empty" id="st-empty" hidden>Nog geen wedstrijden in deze periode. Speel een wedstrijd, dan verschijnen je statistieken hier.</p>
   </section>
 </div>
 <nav class="bottombar" aria-label="Menu">
@@ -517,7 +577,7 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
   </button>
   <button type="button" data-screen="history">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-    <span>Uitslagen</span>
+    <span>Statistiek</span>
   </button>
   <button type="button" id="voice-toggle-2" aria-pressed="true">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -527,7 +587,7 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
 <div class="modal" id="finish-ask" role="dialog" aria-modal="true" aria-labelledby="finish-title" hidden>
   <div class="modal-card">
     <h3 id="finish-title">Uitgegooid!</h3>
-    <p>In hoeveel darts?</p>
+    <p id="finish-q">In hoeveel darts?</p>
     <div class="finish-darts" id="finish-darts"></div>
     <button type="button" class="btn" id="finish-cancel">Annuleren</button>
   </div>

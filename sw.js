@@ -1,5 +1,5 @@
 /* Dubbel Uit — service worker: de app werkt ook zonder internet. */
-const CACHE = "dubbel-uit-v4";
+const CACHE = "dubbel-uit-v5";
 const FILES = [
   "./",
   "./index.html",
