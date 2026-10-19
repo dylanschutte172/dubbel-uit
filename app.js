@@ -301,6 +301,20 @@
     maybeBot();
   }
 
+  // Wedstrijd stoppen (met bevestiging op de pagina zelf).
+  $("stop-btn").addEventListener("click", function () { $("stop-ask").hidden = false; });
+  $("stop-no").addEventListener("click", function () { $("stop-ask").hidden = true; });
+  $("stop-yes").addEventListener("click", function () {
+    $("stop-ask").hidden = true;
+    cancelBot();
+    if (stream) stopCamera();
+    match = null;
+    undoStack = [];
+    recentDarts = [];
+    persist();
+    show("setup");
+  });
+
   $("start-btn").addEventListener("click", function () { startMatch(buildConfig()); });
   $("resume-btn").addEventListener("click", function () { show("play"); maybeBot(); });
 
