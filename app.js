@@ -577,6 +577,9 @@
     $("keypad").appendChild(b);
   });
 
+  $("finish-cancel").addEventListener("click", function () { $("finish-ask").hidden = true; });
+  $("finish-ask").addEventListener("click", function (e) { if (e.target === this) this.hidden = true; });
+
   $("kp-back").addEventListener("click", function () { keypadPress("⌫"); });
 
   function keypadPress(k) {
@@ -623,7 +626,7 @@
         (function (n) {
           var b = document.createElement("button");
           b.type = "button";
-          b.textContent = n + (n === 1 ? " dart" : " darts");
+          b.innerHTML = "<b>" + n + "</b>" + (n === 1 ? "dart" : "darts");
           b.addEventListener("click", function () {
             $("finish-ask").hidden = true;
             pushUndo();
@@ -635,6 +638,7 @@
         })(n);
       }
       $("finish-ask").hidden = false;
+      box.querySelector("button").focus();
       return;
     }
     pushUndo();
