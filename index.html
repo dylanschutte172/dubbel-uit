@@ -169,7 +169,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .quick .btn { flex: 1 1 auto; }
 
 .kp-top { display: flex; gap: 8px; margin-bottom: 10px; }
-.kp-top .btn { flex: none; }
+.kp-top .kp-back { flex: none; width: 76px; font-size: 26px; }
+.undo-key { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px; font: 600 18px/1 var(--font-body); }
+.undo-key:disabled { opacity: 0.45; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fine summary { cursor: pointer; color: var(--muted); font-weight: 600; padding: 4px 0; }
+.fine[open] summary { margin-bottom: 8px; }
+.bottombar { display: none; }
 .keypad-display { flex: 1; min-width: 0; font: 700 52px/1 var(--font-display); text-align: right; padding: 10px 14px; background: var(--surface-2); border-radius: 8px; min-height: 72px; font-variant-numeric: tabular-nums; }
 .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .keypad button { padding: 14px 0; font: 700 26px/1 var(--font-display); border: 1px solid var(--line); background: var(--surface-2); border-radius: 8px; }
@@ -247,17 +253,42 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
   .presets button { flex: 0 0 58px; padding: 10px 0; }
   .keypad { gap: 6px; }
   .keypad button { padding: 0; min-height: 56px; font-size: 28px; }
+  .keypad .undo-key { font: 600 17px/1 var(--font-body); }
   #mode-board p { display: none; }
   .setup .panel { padding: 14px; gap: 14px; }
+  .levels { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .levels button { padding: 8px 8px; }
+  .levels button b { font-size: 17px; }
+  .levels button span { font-size: 12px; }
   /* Telefoon naast het bord: scores groot genoeg om vanaf de werplijn te lezen. */
   body[data-input="camera"] .pcard .rem { font-size: 88px; }
   body[data-input="camera"] .turn .slot { min-height: 56px; font-size: 30px; }
   body[data-input="camera"] .turn .sum { font-size: 36px; }
   .cam-status { font-size: 18px; }
+  .cam-box { aspect-ratio: auto; height: min(42dvh, 75vw); }
   .cam-controls .btn { flex: 1 1 auto; }
+  /* Navigatie onderin, waar je duim bij kan. */
+  header.top { display: none; }
+  .wrap { padding-block: 10px calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .bottombar {
+    display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    background: var(--surface); border-top: 1px solid var(--line);
+    padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px));
+    padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px));
+  }
+  .bottombar button { border: 0; background: none; color: var(--muted); display: grid; justify-items: center; gap: 2px; padding: 6px 0; font: 600 12px/1.2 var(--font-body); border-radius: 10px; }
+  .bottombar svg { width: 24px; height: 24px; }
+  .bottombar button[aria-current="page"] { color: var(--accent); }
+  .bottombar #voice-toggle-2[aria-pressed="true"] { color: var(--fg); }
+  .bottombar #voice-toggle-2[aria-pressed="false"] .waves { display: none; }
+  /* Spelscherm: invoer onderaan het scherm. */
+  #screen-play:not([hidden]) { display: flex; flex-direction: column; min-height: calc(100dvh - 104px - env(safe-area-inset-bottom, 0px)); }
+  .play { margin-top: auto; }
+  body[data-input="board"] .board-wrap { order: 1; }
+  body[data-input="board"] .play > .panel { order: 2; }
   .start-row {
-    position: sticky; bottom: 0; z-index: 5; background: var(--bg);
-    padding-block: 10px calc(10px + env(safe-area-inset-bottom, 0px)); margin-block: -6px -16px;
+    position: sticky; bottom: calc(68px + env(safe-area-inset-bottom, 0px)); z-index: 5; background: var(--bg);
+    padding-block: 10px; margin-block: -6px 0;
   }
   .start-row .btn { flex: 1; }
 }
@@ -287,33 +318,6 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
   <section id="screen-setup" class="setup" hidden>
     <div class="panel">
       <div class="field">
-        <span class="label">Spelvorm</span>
-        <div class="seg" id="opt-start">
-          <button type="button" data-v="301">301</button>
-          <button type="button" data-v="501">501</button>
-          <button type="button" data-v="701">701</button>
-        </div>
-      </div>
-      <div class="field">
-        <span class="label">Uitgooien</span>
-        <div class="seg" id="opt-out">
-          <button type="button" data-v="double">Dubbel uit</button>
-          <button type="button" data-v="single">Alles telt</button>
-        </div>
-      </div>
-      <div class="field">
-        <span class="label">Legs om een set te winnen</span>
-        <div class="stepper"><button type="button" data-step="legs" data-d="-1" aria-label="Minder legs">−</button><output id="out-legs">3</output><button type="button" data-step="legs" data-d="1" aria-label="Meer legs">+</button></div>
-      </div>
-      <div class="field">
-        <span class="label">Sets om de wedstrijd te winnen</span>
-        <div class="stepper"><button type="button" data-step="sets" data-d="-1" aria-label="Minder sets">−</button><output id="out-sets">1</output><button type="button" data-step="sets" data-d="1" aria-label="Meer sets">+</button></div>
-        <span class="muted" id="format-text"></span>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="field">
         <span class="label">Tegenstander</span>
         <div class="seg" id="opt-mode">
           <button type="button" data-v="bot">Tegen de bot</button>
@@ -330,10 +334,10 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
           <span class="label">Niveau van de bot (3-darts gemiddelde)</span>
           <div class="levels" id="levels"></div>
         </div>
-        <div class="field">
-          <label class="label" for="bot-avg">Precies gemiddelde: <span id="bot-avg-out" class="num"></span></label>
-          <input type="range" id="bot-avg" min="20" max="115" step="1">
-        </div>
+        <details class="fine">
+          <summary>Precies instellen: gemiddelde <span id="bot-avg-out" class="num"></span></summary>
+          <input type="range" id="bot-avg" min="20" max="115" step="1" aria-label="Gemiddelde van de bot">
+        </details>
         <div class="field">
           <span class="label">Wie begint?</span>
           <div class="seg" id="opt-first">
@@ -349,6 +353,35 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
         <div class="players-list" id="players-list"></div>
         <button type="button" class="btn" id="add-player">+ Speler toevoegen</button>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="field">
+        <span class="label">Spelvorm</span>
+        <div class="seg" id="opt-start">
+          <button type="button" data-v="301">301</button>
+          <button type="button" data-v="501">501</button>
+          <button type="button" data-v="701">701</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Uitgooien</span>
+        <div class="seg" id="opt-out">
+          <button type="button" data-v="double">Dubbel uit</button>
+          <button type="button" data-v="single">Alles telt</button>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <span class="label">Legs per set</span>
+          <div class="stepper"><button type="button" data-step="legs" data-d="-1" aria-label="Minder legs">−</button><output id="out-legs">3</output><button type="button" data-step="legs" data-d="1" aria-label="Meer legs">+</button></div>
+        </div>
+        <div class="field">
+          <span class="label">Sets</span>
+          <div class="stepper"><button type="button" data-step="sets" data-d="-1" aria-label="Minder sets">−</button><output id="out-sets">1</output><button type="button" data-step="sets" data-d="1" aria-label="Meer sets">+</button></div>
+        </div>
+      </div>
+      <span class="muted" id="format-text"></span>
     </div>
 
     <div class="start-row">
@@ -388,9 +421,10 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
 
         <div id="mode-keypad" hidden>
           <div class="kp-top">
-            <button type="button" class="btn" id="undo-btn-2">Herstel</button>
             <div class="keypad-display" id="kp-display">0</div>
+            <button type="button" class="btn kp-back" id="kp-back" aria-label="Wissen">⌫</button>
           </div>
+          <button type="button" class="undo-key" id="undo-btn-2">Herstel</button>
           <div class="presets" id="presets"></div>
           <div class="keypad" id="keypad"></div>
           <div class="finish-ask" id="finish-ask" hidden>
@@ -447,6 +481,24 @@ table.stats thead th { color: var(--muted); font-size: 12px; letter-spacing: 0.0
     <div class="history" id="history"></div>
   </section>
 </div>
+<nav class="bottombar" aria-label="Menu">
+  <button type="button" data-screen="play">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>
+    <span>Spel</span>
+  </button>
+  <button type="button" data-screen="setup">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span>Nieuw</span>
+  </button>
+  <button type="button" data-screen="history">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span>Uitslagen</span>
+  </button>
+  <button type="button" id="voice-toggle-2" aria-pressed="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span id="voice-label-2">Geluid</span>
+  </button>
+</nav>
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="logic.js"></script>

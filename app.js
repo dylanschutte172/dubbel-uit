@@ -57,7 +57,7 @@
 
   function show(name) {
     SCREENS.forEach(function (s) { $("screen-" + s).hidden = s !== name; });
-    document.querySelectorAll("nav.tabs button").forEach(function (b) {
+    document.querySelectorAll("[data-screen]").forEach(function (b) {
       var current = b.dataset.screen === name || (name === "result" && b.dataset.screen === "play");
       if (current) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
@@ -67,7 +67,7 @@
     if (name === "history") renderHistory();
   }
 
-  document.querySelectorAll("nav.tabs button").forEach(function (b) {
+  document.querySelectorAll("[data-screen]").forEach(function (b) {
     b.addEventListener("click", function () {
       if (b.dataset.screen === "play" && !match) { show(lastResult ? "result" : "setup"); return; }
       show(b.dataset.screen);
@@ -78,16 +78,21 @@
   var canSpeak = "speechSynthesis" in window;
 
   function syncVoice() {
-    $("voice-toggle").setAttribute("aria-pressed", String(settings.voice));
+    ["voice-toggle", "voice-toggle-2"].forEach(function (id) {
+      $(id).setAttribute("aria-pressed", String(settings.voice));
+      $(id).hidden = !canSpeak;
+    });
     $("voice-label").textContent = settings.voice ? "Geluid aan" : "Geluid uit";
-    $("voice-toggle").hidden = !canSpeak;
+    $("voice-label-2").textContent = settings.voice ? "Geluid aan" : "Geluid uit";
   }
-  $("voice-toggle").addEventListener("click", function () {
+  function toggleVoice() {
     settings.voice = !settings.voice;
     saveSettings();
     syncVoice();
     if (settings.voice) say("Geluid aan");
-  });
+  }
+  $("voice-toggle").addEventListener("click", toggleVoice);
+  $("voice-toggle-2").addEventListener("click", toggleVoice);
 
   var nlVoice = null;
   function pickVoice() {
@@ -543,7 +548,12 @@
     b.addEventListener("click", function () { kpValue = String(n); renderKeypad(); });
     $("presets").appendChild(b);
   });
-  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "OK"].forEach(function (k) {
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "UNDO", "0", "OK"].forEach(function (k) {
+    if (k === "UNDO") {
+      // Herstel onderaan het toetsenblok, waar je duim zit.
+      $("keypad").appendChild($("undo-btn-2"));
+      return;
+    }
     var b = document.createElement("button");
     b.type = "button";
     b.textContent = k;
@@ -552,6 +562,8 @@
     b.addEventListener("click", function () { keypadPress(k); });
     $("keypad").appendChild(b);
   });
+
+  $("kp-back").addEventListener("click", function () { keypadPress("⌫"); });
 
   function keypadPress(k) {
     if (!canInput()) return;
