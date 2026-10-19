@@ -289,6 +289,8 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 #st-training { display: grid; gap: 10px; }
 #st-training[hidden] { display: none; }
 .reset-panel { display: grid; gap: 12px; }
+.caller-panel { display: grid; gap: 14px; }
+.caller-panel #caller-test { justify-self: start; }
 .pair { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; }
 .pair p { margin: 0; font-size: 14px; }
 .pair-head, .camdev-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -539,6 +541,24 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
         </div>
       </div>
       <span class="muted" id="format-text"></span>
+    </div>
+
+    <div class="panel caller-panel">
+      <div class="field">
+        <span class="label">Omroeper</span>
+        <div class="seg" id="opt-caller">
+          <button type="button" data-v="en">Engels, zoals op tv</button>
+          <button type="button" data-v="nl">Nederlands</button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="label">Publiek bij 180 en winst</span>
+        <div class="seg" id="opt-crowd">
+          <button type="button" data-v="on">Aan</button>
+          <button type="button" data-v="off">Uit</button>
+        </div>
+      </div>
+      <button type="button" class="btn" id="caller-test">Laat horen</button>
     </div>
 
     <div class="start-row">
@@ -801,9 +821,10 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="logic.js?v=10"></script>
-<script src="link.js?v=10"></script>
-<script src="vision.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="logic.js?v=11"></script>
+<script src="link.js?v=11"></script>
+<script src="caller.js?v=11"></script>
+<script src="vision.js?v=11"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

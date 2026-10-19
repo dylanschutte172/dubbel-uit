@@ -41,6 +41,8 @@
     trainRange: "41-80",
     trainTurns: 3,
     train121Turns: 3,
+    caller: "en", // "en" = Engels zoals op tv, "nl" = Nederlands
+    crowd: true,
     trainRounds: 10,
     atcMode: "any",
   }, store.get("settings", {}));
@@ -82,9 +84,15 @@
   });
 
   // ── Omroeper ───────────────────────────────────────────────────────────
-  var canSpeak = "speechSynthesis" in window;
+  var C = window.DartCaller;
+  var canSpeak = C.canSpeak;
+
+  function syncCaller() {
+    C.configure({ enabled: settings.voice, lang: settings.caller, crowd: settings.crowd });
+  }
 
   function syncVoice() {
+    syncCaller();
     ["voice-toggle", "voice-toggle-2"].forEach(function (id) {
       $(id).setAttribute("aria-pressed", String(settings.voice));
       $(id).hidden = !canSpeak;
@@ -96,48 +104,13 @@
     settings.voice = !settings.voice;
     saveSettings();
     syncVoice();
-    if (settings.voice) say("Geluid aan");
+    if (settings.voice) C.line("Geluid aan", "Caller on");
   }
   $("voice-toggle").addEventListener("click", toggleVoice);
   $("voice-toggle-2").addEventListener("click", toggleVoice);
 
-  var nlVoice = null;
-  function pickVoice() {
-    if (!canSpeak) return;
-    var voices = speechSynthesis.getVoices();
-    nlVoice = voices.filter(function (v) { return /^nl[-_]NL/i.test(v.lang); })[0] ||
-      voices.filter(function (v) { return /^nl/i.test(v.lang); })[0] || null;
-  }
-  if (canSpeak) {
-    pickVoice();
-    speechSynthesis.addEventListener && speechSynthesis.addEventListener("voiceschanged", pickVoice);
-    // Telefoons spreken pas na een eerste aanraking; ontgrendel de spraak daarmee.
-    var unlock = function () {
-      try {
-        var u = new SpeechSynthesisUtterance(" ");
-        u.volume = 0;
-        speechSynthesis.speak(u);
-      } catch (e) { /* geen spraak */ }
-      document.removeEventListener("pointerdown", unlock, true);
-    };
-    document.addEventListener("pointerdown", unlock, true);
-  }
-
-  function say() {
-    // say("60", "Jij hebt 40 nodig"): zinnen worden na elkaar uitgesproken.
-    if (!settings.voice || !canSpeak) return;
-    var parts = Array.prototype.slice.call(arguments).filter(Boolean);
-    try {
-      if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
-      parts.forEach(function (text) {
-        var u = new SpeechSynthesisUtterance(text);
-        u.lang = "nl-NL";
-        u.rate = 1.05;
-        if (nlVoice) u.voice = nlVoice;
-        speechSynthesis.speak(u);
-      });
-    } catch (e) { /* geen spraak */ }
-  }
+  // Korte teksten (training e.d.) gaan via C.line(nederlands, engels); dit is voor losse zinnen.
+  function say() { C.say.apply(null, arguments); }
 
   var toastTimer = null;
   function toast(text) {
@@ -174,6 +147,12 @@
   });
   bindSeg("opt-rounds", "trainRounds", Number);
   bindSeg("opt-atc", "atcMode");
+  bindSeg("opt-caller", "caller");
+  bindSeg("opt-crowd", "crowd", function (v) { return v === "on"; });
+  $("caller-test").addEventListener("click", function () {
+    syncCaller();
+    C.score(180, myName(), 40);
+  });
 
   function pressSeg(id, value) {
     $(id).querySelectorAll("button").forEach(function (b) {
@@ -285,6 +264,9 @@
     pressSeg("opt-turns", settings.train === "121" ? settings.train121Turns : settings.trainTurns);
     pressSeg("opt-rounds", settings.trainRounds);
     pressSeg("opt-atc", settings.atcMode);
+    pressSeg("opt-caller", settings.caller);
+    pressSeg("opt-crowd", settings.crowd ? "on" : "off");
+    syncCaller();
     $("train-range").hidden = settings.train !== "checkout";
     $("train-turns").hidden = settings.train === "atc" || endless;
     $("train-rounds").hidden = settings.train === "atc" || endless;
@@ -333,7 +315,7 @@
     lastResult = null;
     persist();
     show("play");
-    say("Game on!");
+    C.gameOn(match.players[match.leg.current].name, match.players.length === 1);
     maybeBot();
   }
 
@@ -412,7 +394,8 @@
     store.del("atc");
     persist();
     show("play");
-    say(intro, "Gooi " + t.target + " uit");
+    C.say(intro && (C.isEnglish() ? (intro === "Gelukt!" ? "Game shot!" : intro === "Helaas" ? "Unlucky." : intro === "Uitgooi-training" ? "Checkout practice." : intro) : intro),
+      C.isEnglish() ? "You require " + t.target : "Gooi " + t.target + " uit");
   }
 
   function trainingStep(ev) {
@@ -423,8 +406,8 @@
       var last = turns[turns.length - 1];
       recentDarts = last ? last.darts : [];
       var left = match.leg.rem[0];
-      if (ev.type === "bust") { say("Geen score", "nog " + left); toast("Bust · nog " + left); }
-      else { say(String(ev.score), "nog " + left); toast(ev.score + " · nog " + left); }
+      if (ev.type === "bust") { C.bust("", 0); toast("Bust · nog " + left); }
+      else { C.score(ev.score, "", 0); toast(ev.score + " · nog " + left); }
       persist();
       render();
       return;
@@ -434,7 +417,8 @@
     L.trainingResult(t, finished, darts);
     toast(finished ? target + " uit in " + darts + " darts!" : target + " niet gelukt");
     if (t.done) {
-      say(finished ? "Gelukt!" : "Helaas");
+      if (finished) C.line("Gelukt!", "Game shot!");
+      else C.line("Helaas", "Unlucky.");
       finishTraining(t);
       return;
     }
@@ -524,13 +508,16 @@
     lastResult = null;
     store.set("atc", atc);
     show("atc");
-    sayTarget("Around the Clock. Gooi op");
+    sayTarget(C.isEnglish() ? "Around the Clock. Aim for" : "Around the Clock. Gooi op");
   }
 
   function spokenTarget() {
     var t = L.atcTarget(atc);
-    if (t.num === 25) return "de bull";
-    return (atc.mode === "double" ? "dubbel " : atc.mode === "treble" ? "triple " : "") + t.num;
+    var eng = C.isEnglish();
+    if (t.num === 25) return eng ? "the bull" : "de bull";
+    if (atc.mode === "double") return (eng ? "double " : "dubbel ") + t.num;
+    if (atc.mode === "treble") return (eng ? "treble " : "triple ") + t.num;
+    return String(t.num);
   }
 
   function sayTarget(prefix) { say((prefix ? prefix + " " : "") + spokenTarget()); }
@@ -553,7 +540,7 @@
     L.atcThrow(atc, hit);
     store.set("atc", atc);
     if (atc.done) {
-      say("Klaar! " + atc.darts + " darts");
+      C.line("Klaar! " + atc.darts + " darts", "Well done! " + atc.darts + " darts.");
       store.del("atc");
       lastResult = { training: atc };
       saveTraining(atc);
@@ -812,18 +799,21 @@
       if (ev.type === "bust" || ev.type === "turn") {
         var next = match.players[match.leg.current];
         var nextRem = match.leg.rem[match.leg.current];
-        var need = match.cfg.doubleOut && L.checkout(nextRem, 3) ? next.name + ", je hebt " + nextRem + " nodig" : "";
+        var needRem = match.cfg.doubleOut && L.checkout(nextRem, 3) ? nextRem : 0;
         if (ev.type === "bust") {
-          say("Geen score", need);
+          C.bust(next.name, needRem);
           toast(p.name + ": bust");
         } else {
-          say(ev.score === 180 ? "Honderdtachtig!" : String(ev.score), need);
+          C.score(ev.score, next.name, needRem);
           toast(p.name + ": " + ev.score + (ev.score === 180 ? "!" : "") + " · nog " + match.leg.rem[ev.player]);
         }
       } else {
         recentDarts = [];
         var what = ev.type === "match" ? "de wedstrijd" : ev.type === "set" ? "de set" : "de leg";
-        say("Game shot, en " + what + " voor " + p.name);
+        // Het leg- en setnummer zijn al opgehoogd na de game shot: het gewonnen nummer is er één lager.
+        var legWon = ev.type === "leg" ? match.legNo - 1 : match.legNo;
+        var setWon = ev.type === "set" ? match.setNo - 1 : match.setNo;
+        C.gameShot(ev.type, p.name, legWon, setWon, match.players.length === 1);
         toast(p.name + " wint " + what + (ev.score ? " (" + ev.score + " uit)" : ""));
       }
     }

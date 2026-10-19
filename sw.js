@@ -1,5 +1,5 @@
 /* Dubbel Uit — service worker: de app werkt ook zonder internet. */
-const CACHE = "dubbel-uit-v10";
+const CACHE = "dubbel-uit-v11";
 const FILES = [
   "./",
   "./index.html",
@@ -7,6 +7,7 @@ const FILES = [
   "./vision.js",
   "./app.js",
   "./link.js",
+  "./caller.js",
   "./vendor/peerjs.min.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
