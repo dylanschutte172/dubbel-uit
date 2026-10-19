@@ -131,3 +131,67 @@ test("cijferinvoer: darts op de dubbel worden meegegeven", () => {
   assert.equal(L.isOneDartFinish(41), false);
   assert.equal(L.isOneDartFinish(50), true);
 });
+
+test("dubbels per vak: pogingen en raak", () => {
+  const m = L.createMatch({ start: 40, legs: 1, sets: 1, players: [{ name: "A" }] });
+  L.addDart(m, L.dart(1, 20));   // op 40: poging D20, mis → 20 over
+  L.addDart(m, L.dart(1, 10));   // op 20: poging D10, mis → 10 over
+  L.addDart(m, L.dart(2, 5));    // op 10: D5 raak
+  const d = m.players[0].stats.doubles;
+  assert.deepEqual(d.D20, { att: 1, hit: 0 });
+  assert.deepEqual(d.D10, { att: 1, hit: 0 });
+  assert.deepEqual(d.D5, { att: 1, hit: 1 });
+});
+
+test("dubbels bij cijferinvoer", () => {
+  const m = L.createMatch({ start: 32, legs: 1, sets: 1, players: [{ name: "A" }] });
+  L.addTurnTotal(m, 0, undefined, 3);     // 3 keer mis op D16
+  L.addTurnTotal(m, 32, 1, 1);            // 1 dart: D16 raak (afgeleid)
+  const d = m.players[0].stats.doubles;
+  assert.deepEqual(d.D16, { att: 4, hit: 1 });
+  const m2 = L.createMatch({ start: 60, legs: 1, sets: 1, players: [{ name: "A" }] });
+  L.addTurnTotal(m2, 60, 2, 1, "D20");    // S20, D20
+  assert.deepEqual(m2.players[0].stats.doubles.D20, { att: 1, hit: 1 });
+});
+
+test("Around the Clock", () => {
+  const a = L.createATC("double");
+  assert.equal(L.atcTarget(a).label, "D1");
+  assert.equal(L.atcIsHit(a, L.dart(1, 1)), false);
+  assert.equal(L.atcIsHit(a, L.dart(2, 1)), true);
+  for (let i = 0; i < 20; i++) L.atcThrow(a, true);
+  assert.equal(L.atcTarget(a).label, "Bull");
+  assert.equal(L.atcIsHit(a, L.dart(1, 25)), false);
+  assert.equal(L.atcIsHit(a, L.dart(2, 25)), true);
+  L.atcThrow(a, false);
+  L.atcThrow(a, true);
+  assert.equal(a.done, true);
+  assert.equal(a.darts, 22);
+  assert.equal(a.hits, 21);
+});
+
+test("121: omhoog, veilige stand en terugvallen", () => {
+  const t = L.createTraining("121", { rounds: 5 });
+  assert.equal(t.target, 121);
+  L.trainingResult(t, true, 6);   // gelukt in 6 darts → 122, veilig blijft 121
+  assert.equal(t.target, 122);
+  assert.equal(t.locked, 121);
+  L.trainingResult(t, true, 3);   // gelukt in 3 darts → 123 en veilig 123
+  assert.equal(t.locked, 123);
+  L.trainingResult(t, true, 9);   // → 124
+  L.trainingResult(t, false, 9);  // mislukt → terug naar 123
+  assert.equal(t.target, 123);
+  assert.equal(t.best, 123);
+  L.trainingResult(t, false, 9);
+  assert.equal(t.done, true);
+});
+
+test("uitgooi-training kiest alleen echte finishes binnen het bereik", () => {
+  const t = L.createTraining("checkout", { min: 150, max: 170, rounds: 30 });
+  for (let i = 0; i < 30; i++) {
+    assert.ok(t.target >= 150 && t.target <= 170);
+    assert.ok(L.checkout(t.target, 3), "finish " + t.target);
+    L.trainingResult(t, i % 2 === 0, 9);
+  }
+  assert.equal(t.done, true);
+});

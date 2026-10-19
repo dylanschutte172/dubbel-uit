@@ -247,7 +247,20 @@
       dblDarts: 0, dblHits: 0, // darts op een uitgooi-dubbel en hoeveel daarvan raak
       legsPlayed: 0, bestLeg: 0, // aantal darts in de snelst gewonnen leg
       s60: 0, // beurten van 60 tot en met 99
+      doubles: {}, // per dubbel: { att: pogingen, hit: raak (uitgegooid) }
     };
+  }
+
+  function doubleKey(rem) {
+    // De dubbel waarmee je `rem` in één dart uitgooit: "D16", of "Bull" bij 50.
+    return rem === 50 ? "Bull" : "D" + rem / 2;
+  }
+
+  function countDouble(stats, key, att, hit) {
+    if (!stats.doubles) stats.doubles = {};
+    var d = stats.doubles[key] || (stats.doubles[key] = { att: 0, hit: 0 });
+    d.att += att;
+    d.hit += hit;
   }
 
   function isOneDartFinish(rem) {
@@ -371,7 +384,11 @@
     var rem = currentRem(match);
     var res = applyDart(rem, d, match.cfg.doubleOut);
     var stored = { mult: d.mult, num: d.num, score: d.score, label: d.label, isDouble: d.isDouble };
-    if (match.cfg.doubleOut && isOneDartFinish(rem)) stored.atDouble = true;
+    if (match.cfg.doubleOut && isOneDartFinish(rem)) {
+      stored.atDouble = true;
+      var hitIt = res.finished && d.isDouble;
+      countDouble(match.players[leg.current].stats, hitIt ? d.label : doubleKey(rem), 1, hitIt ? 1 : 0);
+    }
     if (d.x !== undefined) { stored.x = d.x; stored.y = d.y; }
     leg.turn.darts.push(stored);
     var darts = leg.turn.darts.slice();
@@ -383,9 +400,10 @@
     return null;
   }
 
-  function addTurnTotal(match, total, dartsToFinish, dblDarts) {
+  function addTurnTotal(match, total, dartsToFinish, dblDarts, finishDouble) {
     // Hele beurt in één keer invoeren (zoals op een scorebord). dartsToFinish alleen bij uitgooien;
-    // dblDarts = hoeveel darts op een uitgooi-dubbel gingen (vraagt de app als het ertoe doet).
+    // dblDarts = hoeveel darts op een uitgooi-dubbel gingen (vraagt de app als het ertoe doet);
+    // finishDouble = op welke dubbel je uitgooide ("D16", "Bull"), als je dat weet.
     if (match.winner !== null) return null;
     var leg = match.leg;
     var rem = leg.turn.start;
@@ -394,6 +412,15 @@
     var finished = next === 0;
     var used = finished ? dartsToFinish || 3 : 3;
     if (dblDarts === undefined) dblDarts = finished && !bust && match.cfg.doubleOut ? 1 : 0;
+    if (match.cfg.doubleOut && dblDarts > 0) {
+      var stats = match.players[leg.current].stats;
+      if (finished && !bust && !finishDouble && used === 1) finishDouble = doubleKey(rem);
+      var misses = finished && !bust ? dblDarts - 1 : dblDarts;
+      if (finished && !bust && finishDouble) countDouble(stats, finishDouble, 1, 1);
+      // Gemiste pogingen tellen we bij de dubbel waar je op stond (alleen als dat er één was).
+      if (misses > 0 && isOneDartFinish(rem)) countDouble(stats, doubleKey(rem), misses, 0);
+      else if (misses > 0 && finishDouble) countDouble(stats, finishDouble, misses, 0);
+    }
     return recordTurn(match, total, used, bust, finished && !bust, [], dblDarts);
   }
 
@@ -408,6 +435,101 @@
   function checkoutPercentage(stats) {
     // null als er (nog) geen darts op een dubbel zijn gegooid.
     return stats.dblDarts ? (stats.dblHits / stats.dblDarts) * 100 : null;
+  }
+
+  // ── Training ───────────────────────────────────────────────────────────
+  // Around the Clock: 1 t/m 20 en dan de bull, in volgorde.
+  var ATC_TARGETS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25];
+
+  function createATC(mode) {
+    // mode: "any" (elk vak van het nummer), "double" of "treble"
+    return { type: "atc", mode: mode || "any", idx: 0, darts: 0, hits: 0, done: false, startedAt: Date.now() };
+  }
+
+  function atcTarget(a) {
+    var num = ATC_TARGETS[Math.min(a.idx, ATC_TARGETS.length - 1)];
+    if (num === 25) return { num: 25, label: a.mode === "double" ? "Bull" : "Bull of 25" };
+    return { num: num, label: (a.mode === "double" ? "D" : a.mode === "treble" ? "T" : "") + num };
+  }
+
+  function atcIsHit(a, d) {
+    var t = atcTarget(a);
+    if (d.num !== t.num || d.mult === 0) return false;
+    if (t.num === 25) return a.mode === "double" ? d.mult === 2 : true;
+    if (a.mode === "double") return d.mult === 2;
+    if (a.mode === "treble") return d.mult === 3;
+    return true;
+  }
+
+  function atcThrow(a, hit) {
+    if (a.done) return a;
+    a.darts++;
+    if (hit) {
+      a.hits++;
+      a.idx++;
+      if (a.idx >= ATC_TARGETS.length) {
+        a.done = true;
+        a.endedAt = Date.now();
+      }
+    }
+    return a;
+  }
+
+  function trainingTarget(t) {
+    // Uitgooi-training: willekeurige finish die echt uit te gooien is.
+    for (var i = 0; i < 200; i++) {
+      var n = t.min + Math.floor(Math.random() * (t.max - t.min + 1));
+      if (checkout(n, 3)) return n;
+    }
+    return 40;
+  }
+
+  function createTraining(type, opts) {
+    // type "121": 9 darts om uit te gooien; gelukt = doel +1, binnen 3 darts gelukt = dat wordt je
+    // nieuwe veilige stand, mislukt = terug naar je veilige stand.
+    // type "checkout": willekeurige finishes binnen een bereik.
+    opts = opts || {};
+    var t = {
+      type: type,
+      rounds: opts.rounds || 10,
+      round: 1,
+      results: [],
+      done: false,
+      startedAt: Date.now(),
+    };
+    if (type === "121") {
+      t.target = 121;
+      t.locked = 121;
+      t.best = 0;
+      t.maxTurns = 3;
+    } else {
+      t.min = opts.min || 41;
+      t.max = opts.max || 100;
+      t.maxTurns = opts.turns || 3;
+      t.target = trainingTarget(t);
+    }
+    return t;
+  }
+
+  function trainingResult(t, ok, darts) {
+    t.results.push({ target: t.target, ok: ok, darts: darts });
+    if (t.type === "121") {
+      if (ok) {
+        if (t.target > t.best) t.best = t.target;
+        t.target++;
+        if (darts <= 3) t.locked = t.target;
+      } else {
+        t.target = t.locked;
+      }
+    } else {
+      t.target = trainingTarget(t);
+    }
+    t.round++;
+    if (t.round > t.rounds) {
+      t.done = true;
+      t.endedAt = Date.now();
+    }
+    return t;
   }
 
   var api = {
@@ -435,6 +557,14 @@
     firstNineAverage: firstNineAverage,
     checkoutPercentage: checkoutPercentage,
     isOneDartFinish: isOneDartFinish,
+    doubleKey: doubleKey,
+    ATC_TARGETS: ATC_TARGETS,
+    createATC: createATC,
+    atcTarget: atcTarget,
+    atcIsHit: atcIsHit,
+    atcThrow: atcThrow,
+    createTraining: createTraining,
+    trainingResult: trainingResult,
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;

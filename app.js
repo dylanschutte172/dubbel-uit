@@ -37,6 +37,11 @@
     inputMode: window.matchMedia && window.matchMedia("(max-width: 820px)").matches ? "keypad" : "board",
     camSens: 30,
     camId: "",
+    train: "121",
+    trainRange: "41-80",
+    trainTurns: 3,
+    trainRounds: 10,
+    atcMode: "any",
   }, store.get("settings", {}));
   // Versie 2: omroeper standaard aan, ook voor wie hem eerder uit had staan.
   if (settings.voiceV !== 2) { settings.voice = true; settings.voiceV = 2; }
@@ -53,23 +58,24 @@
   var kpValue = "";
 
   // ── Schermen ───────────────────────────────────────────────────────────
-  var SCREENS = ["setup", "play", "result", "history"];
+  var SCREENS = ["setup", "play", "result", "history", "atc"];
 
   function show(name) {
     SCREENS.forEach(function (s) { $("screen-" + s).hidden = s !== name; });
     document.querySelectorAll("[data-screen]").forEach(function (b) {
-      var current = b.dataset.screen === name || (name === "result" && b.dataset.screen === "play");
+      var current = b.dataset.screen === name || ((name === "result" || name === "atc") && b.dataset.screen === "play");
       if (current) b.setAttribute("aria-current", "page");
       else b.removeAttribute("aria-current");
     });
     if (name === "setup") renderSetup();
     if (name === "play") render();
     if (name === "history") renderHistory();
+    if (name === "atc") renderATC();
   }
 
   document.querySelectorAll("[data-screen]").forEach(function (b) {
     b.addEventListener("click", function () {
-      if (b.dataset.screen === "play" && !match) { show(lastResult ? "result" : "setup"); return; }
+      if (b.dataset.screen === "play" && !match) { show(atc && !atc.done ? "atc" : lastResult ? "result" : "setup"); return; }
       show(b.dataset.screen);
     });
   });
@@ -155,6 +161,11 @@
   bindSeg("opt-out", "out");
   bindSeg("opt-mode", "mode");
   bindSeg("opt-first", "first");
+  bindSeg("opt-train", "train");
+  bindSeg("opt-range", "trainRange");
+  bindSeg("opt-turns", "trainTurns", Number);
+  bindSeg("opt-rounds", "trainRounds", Number);
+  bindSeg("opt-atc", "atcMode");
 
   function pressSeg(id, value) {
     $(id).querySelectorAll("button").forEach(function (b) {
@@ -252,8 +263,22 @@
     $("format-text").textContent = settings.sets > 1
       ? "Best of " + (2 * settings.sets - 1) + " sets, elke set best of " + (2 * settings.legs - 1) + " legs"
       : "Best of " + (2 * settings.legs - 1) + " legs";
+    var training = settings.mode === "training";
     $("bot-options").hidden = settings.mode !== "bot";
     $("player-options").hidden = settings.mode !== "players";
+    $("me-field").hidden = settings.mode === "players";
+    $("training-options").hidden = !training;
+    $("game-options").hidden = training;
+    pressSeg("opt-train", settings.train);
+    pressSeg("opt-range", settings.trainRange);
+    pressSeg("opt-turns", settings.trainTurns);
+    pressSeg("opt-rounds", settings.trainRounds);
+    pressSeg("opt-atc", settings.atcMode);
+    $("train-range").hidden = settings.train !== "checkout";
+    $("train-turns").hidden = settings.train !== "checkout";
+    $("train-rounds").hidden = settings.train === "atc";
+    $("train-atc").hidden = settings.train !== "atc";
+    $("start-btn").textContent = training ? "Start training" : "Start wedstrijd";
     $("me-name").value = settings.me;
     $("bot-avg").value = settings.botAvg;
     $("bot-avg-out").textContent = settings.botAvg;
@@ -308,6 +333,7 @@
     $("stop-ask").hidden = true;
     cancelBot();
     if (stream) stopCamera();
+    if (match && match.training && match.training.results.length) saveTraining(match.training);
     match = null;
     undoStack = [];
     recentDarts = [];
@@ -315,7 +341,205 @@
     show("setup");
   });
 
-  $("start-btn").addEventListener("click", function () { startMatch(buildConfig()); });
+  $("start-btn").addEventListener("click", function () {
+    if (settings.mode === "training") startTraining();
+    else startMatch(buildConfig());
+  });
+
+  // ── Training: 121 en uitgooien (gespeeld als korte legs), Around the Clock ──
+  function myName() { return (settings.me || "").trim() || "Jij"; }
+
+  function startTraining() {
+    if (settings.train === "atc") { startATC(); return; }
+    var range = settings.trainRange.split("-").map(Number);
+    var t = L.createTraining(settings.train, {
+      min: range[0], max: range[1], turns: settings.trainTurns, rounds: settings.trainRounds,
+    });
+    t.name = myName();
+    startRound(t, settings.train === "121" ? "121" : "Uitgooi-training");
+  }
+
+  function startRound(t, intro) {
+    cancelBot();
+    match = L.createMatch({ start: t.target, legs: 1, sets: 1, doubleOut: true, players: [{ name: t.name }] });
+    match.training = t;
+    undoStack = [];
+    recentDarts = [];
+    kpValue = "";
+    lastResult = null;
+    atc = null;
+    store.del("atc");
+    persist();
+    show("play");
+    say(intro, "Gooi " + t.target + " uit");
+  }
+
+  function trainingStep(ev) {
+    var t = match.training;
+    var finished = ev.type === "leg" || ev.type === "set" || ev.type === "match";
+    var turns = match.leg.turns;
+    if (!finished && turns.length < t.maxTurns) {
+      var last = turns[turns.length - 1];
+      recentDarts = last ? last.darts : [];
+      var left = match.leg.rem[0];
+      if (ev.type === "bust") { say("Geen score", "nog " + left); toast("Bust · nog " + left); }
+      else { say(String(ev.score), "nog " + left); toast(ev.score + " · nog " + left); }
+      persist();
+      render();
+      return;
+    }
+    var darts = match.players[0].stats.darts;
+    var target = t.target;
+    L.trainingResult(t, finished, darts);
+    toast(finished ? target + " uit in " + darts + " darts!" : target + " niet gelukt");
+    if (t.done) {
+      say(finished ? "Gelukt!" : "Helaas");
+      finishTraining(t);
+      return;
+    }
+    startRound(t, finished ? "Gelukt!" : "Helaas");
+  }
+
+  function saveTraining(t) {
+    var ok = (t.results || []).filter(function (r) { return r.ok; });
+    var entry = {
+      type: t.type, name: t.name, date: Date.now(), rounds: (t.results || []).length, ok: ok.length,
+      darts: ok.reduce(function (sum, r) { return sum + r.darts; }, 0),
+    };
+    if (t.type === "121") { entry.best = t.best; entry.locked = t.locked; }
+    if (t.type === "checkout") { entry.min = t.min; entry.max = t.max; entry.turns = t.maxTurns; }
+    if (t.type === "atc") { entry = { type: "atc", name: t.name, date: Date.now(), mode: t.mode, darts: t.darts, hits: t.hits, done: t.done, secs: Math.round(((t.endedAt || Date.now()) - t.startedAt) / 1000) }; }
+    var list = store.get("training", []);
+    list.unshift(entry);
+    store.set("training", list.slice(0, 300));
+  }
+
+  function finishTraining(t) {
+    cancelBot();
+    saveTraining(t);
+    lastResult = { training: t };
+    match = null;
+    persist();
+    renderTrainingResult(t);
+    show("result");
+  }
+
+  function renderTrainingResult(t) {
+    var ok = (t.results || []).filter(function (r) { return r.ok; });
+    var sub = $("result-sub");
+    sub.hidden = false;
+    if (t.type === "atc") {
+      $("result-title").textContent = t.done ? "Rondje klaar!" : "Around the Clock";
+      sub.textContent = t.darts + " darts · " + Math.round((t.hits / Math.max(1, t.darts)) * 100) + "% raak";
+    } else if (t.type === "121") {
+      $("result-title").textContent = t.best ? "121: hoogste " + t.best : "121";
+      sub.textContent = ok.length + " van " + t.results.length + " gelukt · veilige stand " + t.locked;
+    } else {
+      $("result-title").textContent = ok.length + " van " + t.results.length + " uitgegooid";
+      sub.textContent = Math.round((ok.length / Math.max(1, t.results.length)) * 100) + "% gelukt · finishes " + t.min + "–" + t.max;
+    }
+    var tbl = $("result-table");
+    tbl.textContent = "";
+    if (t.type === "atc") {
+      var rows = [["Darts", t.darts], ["Raak", t.hits + " van " + t.darts], ["Tijd", Math.floor(((t.endedAt || Date.now()) - t.startedAt) / 60000) + " min"]];
+      var tb = document.createElement("tbody");
+      rows.forEach(function (r) {
+        var tr = document.createElement("tr");
+        var th = document.createElement("th"); th.scope = "row"; th.textContent = r[0];
+        var td = document.createElement("td"); td.textContent = r[1];
+        tr.append(th, td); tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      return;
+    }
+    var thead = document.createElement("thead");
+    thead.innerHTML = "<tr><th>Ronde</th><th>Finish</th><th>Resultaat</th></tr>";
+    tbl.appendChild(thead);
+    var body = document.createElement("tbody");
+    t.results.forEach(function (r, i) {
+      var tr = document.createElement("tr");
+      [String(i + 1), String(r.target), r.ok ? "Uit in " + r.darts + " darts" : "Niet gelukt"].forEach(function (v, k) {
+        var c = document.createElement(k === 0 ? "th" : "td");
+        if (k === 0) c.scope = "row";
+        c.textContent = v;
+        tr.appendChild(c);
+      });
+      body.appendChild(tr);
+    });
+    tbl.appendChild(body);
+  }
+
+  // Around the Clock
+  var atc = store.get("atc", null);
+  var atcUndo = [];
+
+  function startATC() {
+    cancelBot();
+    match = null;
+    persist();
+    atc = L.createATC(settings.atcMode);
+    atc.name = myName();
+    atcUndo = [];
+    lastResult = null;
+    store.set("atc", atc);
+    show("atc");
+    sayTarget("Around the Clock. Gooi op");
+  }
+
+  function spokenTarget() {
+    var t = L.atcTarget(atc);
+    if (t.num === 25) return "de bull";
+    return (atc.mode === "double" ? "dubbel " : atc.mode === "treble" ? "triple " : "") + t.num;
+  }
+
+  function sayTarget(prefix) { say((prefix ? prefix + " " : "") + spokenTarget()); }
+
+  function renderATC() {
+    if (!atc) return;
+    var t = L.atcTarget(atc);
+    $("atc-mode").textContent = "Around the Clock · " + (atc.mode === "double" ? "alleen dubbels" : atc.mode === "treble" ? "alleen triples" : "elk vak");
+    $("atc-target").textContent = t.num === 25 ? "Bull" : t.label;
+    $("atc-bar").style.width = Math.round((atc.idx / L.ATC_TARGETS.length) * 100) + "%";
+    $("atc-progress").textContent = atc.idx + " van " + L.ATC_TARGETS.length;
+    $("atc-darts").textContent = atc.darts + " darts";
+    $("atc-rate").textContent = atc.darts ? Math.round((atc.hits / atc.darts) * 100) + "% raak" : "";
+    $("atc-undo").disabled = !atcUndo.length;
+  }
+
+  function atcThrow(hit) {
+    if (!atc || atc.done) return;
+    atcUndo.push(JSON.stringify(atc));
+    L.atcThrow(atc, hit);
+    store.set("atc", atc);
+    if (atc.done) {
+      say("Klaar! " + atc.darts + " darts");
+      store.del("atc");
+      lastResult = { training: atc };
+      saveTraining(atc);
+      renderTrainingResult(atc);
+      atc = null;
+      show("result");
+      return;
+    }
+    if (hit) sayTarget();
+    renderATC();
+  }
+  $("atc-hit").addEventListener("click", function () { atcThrow(true); });
+  $("atc-miss").addEventListener("click", function () { atcThrow(false); });
+  $("atc-undo").addEventListener("click", function () {
+    if (!atcUndo.length) return;
+    atc = JSON.parse(atcUndo.pop());
+    store.set("atc", atc);
+    renderATC();
+  });
+  $("atc-stop").addEventListener("click", function () { $("atc-stop-ask").hidden = false; });
+  $("atc-stop-no").addEventListener("click", function () { $("atc-stop-ask").hidden = true; });
+  $("atc-stop-yes").addEventListener("click", function () {
+    $("atc-stop-ask").hidden = true;
+    atc = null;
+    store.del("atc");
+    show("setup");
+  });
   $("resume-btn").addEventListener("click", function () { show("play"); maybeBot(); });
 
   // ── Dartbord ───────────────────────────────────────────────────────────
@@ -441,6 +665,11 @@
     var cur = match.players[leg.current];
     $("who-turn").textContent = match.winner !== null ? match.players[match.winner].name + " wint!" : cur.name + (cur.bot ? " gooit…" : " gooit");
     $("leg-info").textContent = (match.cfg.sets > 1 ? "Set " + match.setNo + " · " : "") + "Leg " + match.legNo + " · " + match.cfg.start + (match.cfg.doubleOut ? " dubbel uit" : "");
+    if (match.training) {
+      var tr = match.training;
+      $("who-turn").textContent = (tr.type === "121" ? "121" : "Uitgooien") + " · ronde " + tr.round + "/" + tr.rounds;
+      $("leg-info").textContent = "Beurt " + Math.min(tr.maxTurns, leg.turns.length + 1) + " van " + tr.maxTurns + (tr.type === "121" ? " · veilig " + tr.locked : "");
+    }
 
     var remNow = L.currentRem(match);
     var route = match.cfg.doubleOut && match.winner === null ? L.checkout(remNow, 3 - leg.turn.darts.length) : null;
@@ -524,6 +753,7 @@
   $("miss-btn-2").addEventListener("click", miss);
 
   function afterEvent(ev) {
+    if (ev && match.training) { trainingStep(ev); return; }
     if (ev) {
       var turns = match.leg.turns;
       var last = turns[turns.length - 1];
@@ -603,11 +833,12 @@
   }
 
   // Keuze-popup: ask("Titel", "Vraag", [{ big: "2", small: "darts", value: 2 }], function (value) {...})
-  function ask(title, question, options, onPick) {
+  function ask(title, question, options, onPick, compact) {
     $("finish-title").textContent = title;
     $("finish-q").textContent = question;
     var box = $("finish-darts");
     box.textContent = "";
+    box.classList.toggle("compact", !!compact);
     options.forEach(function (o) {
       var b = document.createElement("button");
       b.type = "button";
@@ -631,12 +862,33 @@
     return out;
   }
 
-  function commitTotal(total, dartsToFinish, dblDarts) {
+  function commitTotal(total, dartsToFinish, dblDarts, finishDouble) {
     pushUndo();
     kpValue = "";
     renderKeypad();
     recentDarts = [];
-    afterEvent(L.addTurnTotal(match, total, dartsToFinish, dblDarts));
+    afterEvent(L.addTurnTotal(match, total, dartsToFinish, dblDarts, finishDouble));
+  }
+
+  // Welke dubbels kunnen de laatste dart zijn geweest bij `rem` in `n` darts?
+  var ONE_DART = (function () {
+    var set = { 0: true, 25: true, 50: true };
+    for (var i = 1; i <= 20; i++) { set[i] = true; set[2 * i] = true; set[3 * i] = true; }
+    return Object.keys(set).map(Number);
+  })();
+
+  function reachable(v, k) {
+    if (k === 0) return v === 0;
+    return ONE_DART.some(function (d) { return d <= v && reachable(v - d, k - 1); });
+  }
+
+  function askFinishDouble(rem, n, done) {
+    var opts = [];
+    for (var i = 20; i >= 1; i--) if (2 * i <= rem && reachable(rem - 2 * i, n - 1)) opts.push({ big: "D" + i, value: "D" + i });
+    if (rem >= 50 && reachable(rem - 50, n - 1)) opts.push({ big: "Bull", value: "Bull" });
+    if (opts.length <= 1) { done(opts.length ? opts[0].value : undefined); return; }
+    opts.push({ big: "?", small: "", value: undefined });
+    ask("Welke dubbel?", "Op welke dubbel ging hij uit? (? = weet ik niet)", opts, done, true);
   }
 
   function submitTotal() {
@@ -652,6 +904,8 @@
     }
     var rem = match.leg.turn.start;
     var dbl = match.cfg.doubleOut;
+    // Dubbel-vragen alleen in wedstrijden; trainingen tellen daar niet voor mee.
+    var track = dbl && !match.training;
     if (total === rem && rem > 0) {
       var minDarts = dbl ? (L.checkout(rem, 1) ? 1 : L.checkout(rem, 2) ? 2 : L.checkout(rem, 3) ? 3 : 0) : Math.ceil(rem / 60);
       if (!minDarts) {
@@ -659,16 +913,16 @@
         return;
       }
       ask("Uitgegooid!", "In hoeveel darts?", dartOptions(minDarts, 3), function (n) {
-        if (!dbl || n === 1) { commitTotal(total, n, dbl ? 1 : 0); return; }
-        // Voor je uitgooipercentage: hoeveel van die darts gingen naar een dubbel?
+        if (!track || n === 1) { commitTotal(total, n, dbl ? 1 : 0); return; }
+        // Voor je uitgooipercentage: hoeveel van die darts gingen naar een dubbel? En welke dubbel?
         ask("Op de dubbel", "Hoeveel darts gooide je op een dubbel?", dartOptions(1, n), function (d) {
-          commitTotal(total, n, d);
+          askFinishDouble(rem, n, function (fd) { commitTotal(total, n, d, fd); });
         });
       });
       return;
     }
     // Stond je op een uitgooi (50 of minder) en ging hij er niet uit? Vraag de darts op de dubbel.
-    if (dbl && rem <= 50 && L.checkout(rem, 3)) {
+    if (track && rem <= 50 && L.checkout(rem, 3)) {
       var opts = dartOptions(0, 3);
       opts[0].small = "geen";
       ask("Op de dubbel", "Hoeveel darts gooide je op een dubbel?", opts, function (d) {
@@ -768,6 +1022,7 @@
           s100: st.s100,
           highOut: st.highOut,
           bestLeg: st.bestLeg,
+          doubles: st.doubles || {},
         };
       }),
     };
@@ -787,6 +1042,7 @@
 
   function renderResult() {
     var m = lastResult;
+    $("result-sub").hidden = true;
     var w = m.players[m.winner];
     $("result-title").textContent = w.bot ? "De bot wint" : w.name + " wint!";
     var rows = [
@@ -832,6 +1088,11 @@
   }
 
   $("rematch-btn").addEventListener("click", function () {
+    if (lastResult && lastResult.training) {
+      if (lastResult.training.type === "atc") { settings.atcMode = lastResult.training.mode; startATC(); }
+      else startTraining();
+      return;
+    }
     if (!lastSetup) { show("setup"); return; }
     var cfg = JSON.parse(JSON.stringify(lastSetup));
     cfg.first = (cfg.first + 1) % cfg.players.length;
@@ -934,6 +1195,7 @@
     var rows = entriesFor(hist, key, from, now + 1);
     $("st-body").hidden = !rows.length;
     $("st-empty").hidden = !!rows.length;
+    renderTrainingStats(key || keyOf(myName()), from);
     if (!rows.length) return;
 
     var a = aggregate(rows);
@@ -982,6 +1244,8 @@
       box.appendChild(el);
     });
 
+    renderDoubles(rows);
+
     var chrono = rows.slice().reverse().filter(function (r) { return r.me.avg > 0; });
     drawChart(chrono);
 
@@ -1012,6 +1276,115 @@
       list.appendChild(item);
     });
   }
+
+  function renderDoubles(rows) {
+    var all = {};
+    rows.forEach(function (r) {
+      var d = r.me.doubles || {};
+      Object.keys(d).forEach(function (k) {
+        var x = all[k] || (all[k] = { att: 0, hit: 0 });
+        x.att += d[k].att;
+        x.hit += d[k].hit;
+      });
+    });
+    var keys = Object.keys(all).filter(function (k) { return all[k].att > 0; });
+    $("st-doubles-panel").hidden = !keys.length;
+    if (!keys.length) return;
+    keys.sort(function (a, b) { return all[b].hit - all[a].hit || all[b].att - all[a].att; });
+    var fav = keys[0];
+    var worst = keys.filter(function (k) { return all[k].att >= 3; })
+      .sort(function (a, b) { return all[a].hit / all[a].att - all[b].hit / all[b].att; })[0];
+    var favText = all[fav].hit ? "Favoriete dubbel: " + fav + " (" + all[fav].hit + " keer uitgegooid)." : "";
+    if (worst && worst !== fav && all[worst].hit / all[worst].att < 0.25) {
+      favText += " Oefenen: " + worst + " (" + all[worst].hit + " van " + all[worst].att + ").";
+    }
+    $("st-fav").textContent = favText.trim();
+    var list = $("st-doubles");
+    list.textContent = "";
+    keys.slice(0, 10).forEach(function (k) {
+      var x = all[k];
+      var p = Math.round((x.hit / x.att) * 100);
+      var row = document.createElement("div");
+      row.className = "dbl-row";
+      var name = document.createElement("b");
+      name.textContent = k;
+      var bar = document.createElement("div");
+      bar.className = "bar";
+      bar.setAttribute("aria-hidden", "true");
+      var fill = document.createElement("i");
+      fill.style.width = p + "%";
+      bar.appendChild(fill);
+      var txt = document.createElement("span");
+      txt.textContent = x.hit + "/" + x.att + " · " + p + "%";
+      row.append(name, bar, txt);
+      list.appendChild(row);
+    });
+  }
+
+  function renderTrainingStats(key, from) {
+    var list = store.get("training", []).filter(function (e) { return e.date >= from && keyOf(e.name) === key; });
+    $("st-training").hidden = !list.length;
+    var box = $("st-train-tiles");
+    box.textContent = "";
+    if (!list.length) return;
+    var tiles = [];
+    var t121 = list.filter(function (e) { return e.type === "121"; });
+    if (t121.length) {
+      var best = Math.max.apply(null, t121.map(function (e) { return e.best || 0; }));
+      tiles.push(["121 record", best || "–", t121.length + (t121.length === 1 ? " sessie" : " sessies")]);
+    }
+    var co = list.filter(function (e) { return e.type === "checkout"; });
+    if (co.length) {
+      var ok = co.reduce(function (a, e) { return a + e.ok; }, 0);
+      var rounds = co.reduce(function (a, e) { return a + e.rounds; }, 0);
+      tiles.push(["Uitgooi-training", Math.round((ok / Math.max(1, rounds)) * 100) + "%", ok + " van " + rounds + " finishes"]);
+    }
+    ["any", "double", "treble"].forEach(function (mode) {
+      var a = list.filter(function (e) { return e.type === "atc" && e.mode === mode && e.done; });
+      if (!a.length) return;
+      var bestDarts = Math.min.apply(null, a.map(function (e) { return e.darts; }));
+      tiles.push(["Around the Clock" + (mode === "double" ? " (D)" : mode === "treble" ? " (T)" : ""), bestDarts, "darts, beste rondje"]);
+    });
+    tiles.forEach(function (t) {
+      var el = document.createElement("div");
+      el.className = "tile";
+      var lab = document.createElement("span");
+      lab.className = "label";
+      lab.textContent = t[0];
+      var val = document.createElement("b");
+      val.textContent = t[1];
+      var sm = document.createElement("small");
+      sm.textContent = t[2];
+      el.append(lab, val, sm);
+      box.appendChild(el);
+    });
+  }
+
+  // Reset
+  var resetWhat = null;
+  $("reset-stats").addEventListener("click", function () {
+    resetWhat = "stats";
+    $("reset-text").textContent = "Alle uitslagen, statistieken en trainingen wissen? Dit kun je niet terugdraaien.";
+    $("reset-ask").hidden = false;
+  });
+  $("reset-all").addEventListener("click", function () {
+    resetWhat = "all";
+    $("reset-text").textContent = "Alles wissen: statistieken, trainingen, instellingen, camera-kalibratie en een lopende wedstrijd? Dit kun je niet terugdraaien.";
+    $("reset-ask").hidden = false;
+  });
+  $("reset-no").addEventListener("click", function () { $("reset-ask").hidden = true; });
+  $("reset-yes").addEventListener("click", function () {
+    store.del("history");
+    store.del("training");
+    if (resetWhat === "all") {
+      ["settings", "calib", "match", "lastSetup", "atc"].forEach(store.del);
+      location.reload();
+      return;
+    }
+    $("reset-ask").hidden = true;
+    toast("Statistieken gewist");
+    renderHistory();
+  });
 
   function drawChart(rows) {
     var box = $("st-chart");
@@ -1390,6 +1763,6 @@
   buildBoard();
   syncVoice();
   if ("speechSynthesis" in window) speechSynthesis.getVoices();
-  show(match ? "play" : "setup");
+  show(match ? "play" : atc && !atc.done ? "atc" : "setup");
   maybeBot();
 })();
