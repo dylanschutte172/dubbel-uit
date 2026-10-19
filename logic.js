@@ -501,7 +501,7 @@
       t.target = 121;
       t.locked = 121;
       t.best = 0;
-      t.maxTurns = 3;
+      t.maxTurns = opts.turns || 3; // standaard 9 darts
     } else {
       t.min = opts.min || 41;
       t.max = opts.max || 100;

@@ -40,6 +40,7 @@
     train: "121",
     trainRange: "41-80",
     trainTurns: 3,
+    train121Turns: 3,
     trainRounds: 10,
     atcMode: "any",
   }, store.get("settings", {}));
@@ -163,7 +164,14 @@
   bindSeg("opt-first", "first");
   bindSeg("opt-train", "train");
   bindSeg("opt-range", "trainRange");
-  bindSeg("opt-turns", "trainTurns", Number);
+  // 121 en uitgooien onthouden elk hun eigen aantal darts.
+  $("opt-turns").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    settings[settings.train === "121" ? "train121Turns" : "trainTurns"] = Number(b.dataset.v);
+    saveSettings();
+    renderSetup();
+  });
   bindSeg("opt-rounds", "trainRounds", Number);
   bindSeg("opt-atc", "atcMode");
 
@@ -271,11 +279,11 @@
     $("game-options").hidden = training;
     pressSeg("opt-train", settings.train);
     pressSeg("opt-range", settings.trainRange);
-    pressSeg("opt-turns", settings.trainTurns);
+    pressSeg("opt-turns", settings.train === "121" ? settings.train121Turns : settings.trainTurns);
     pressSeg("opt-rounds", settings.trainRounds);
     pressSeg("opt-atc", settings.atcMode);
     $("train-range").hidden = settings.train !== "checkout";
-    $("train-turns").hidden = settings.train !== "checkout";
+    $("train-turns").hidden = settings.train === "atc";
     $("train-rounds").hidden = settings.train === "atc";
     $("train-atc").hidden = settings.train !== "atc";
     $("start-btn").textContent = training ? "Start training" : "Start wedstrijd";
@@ -353,7 +361,8 @@
     if (settings.train === "atc") { startATC(); return; }
     var range = settings.trainRange.split("-").map(Number);
     var t = L.createTraining(settings.train, {
-      min: range[0], max: range[1], turns: settings.trainTurns, rounds: settings.trainRounds,
+      min: range[0], max: range[1], rounds: settings.trainRounds,
+      turns: settings.train === "121" ? settings.train121Turns : settings.trainTurns,
     });
     t.name = myName();
     startRound(t, settings.train === "121" ? "121" : "Uitgooi-training");

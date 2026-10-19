@@ -195,3 +195,8 @@ test("uitgooi-training kiest alleen echte finishes binnen het bereik", () => {
   }
   assert.equal(t.done, true);
 });
+
+test("121 met een eigen aantal darts", () => {
+  assert.equal(L.createTraining("121").maxTurns, 3);
+  assert.equal(L.createTraining("121", { turns: 4 }).maxTurns, 4);
+});
