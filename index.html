@@ -416,6 +416,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
           <div class="train-pick" id="opt-train">
             <button type="button" data-v="121"><b>121</b><span>121 uitgooien binnen je aantal darts. Gelukt? Het doel gaat 1 omhoog.</span></button>
             <button type="button" data-v="checkout"><b>Uitgooien</b><span>Willekeurige finishes oefenen binnen een bereik.</span></button>
+            <button type="button" data-v="endless"><b>Eindeloos legs</b><span>Leg na leg gooien, zo lang je wilt. Telt mee voor je gemiddelde.</span></button>
             <button type="button" data-v="atc"><b>Around the Clock</b><span>1 tot en met 20 en dan de bull, op volgorde.</span></button>
           </div>
         </div>
@@ -445,6 +446,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
             <button type="button" data-v="10">10</button>
             <button type="button" data-v="20">20</button>
             <button type="button" data-v="30">30</button>
+            <button type="button" data-v="0">Eindeloos</button>
           </div>
         </div>
         <div class="field" id="train-atc">
@@ -499,7 +501,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
           <button type="button" data-v="single">Alles telt</button>
         </div>
       </div>
-      <div class="two">
+      <div class="two" id="legs-sets">
         <div class="field">
           <span class="label">Legs per set</span>
           <div class="stepper"><button type="button" data-step="legs" data-d="-1" aria-label="Minder legs">−</button><output id="out-legs">3</output><button type="button" data-step="legs" data-d="1" aria-label="Meer legs">+</button></div>
@@ -528,7 +530,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
       <button type="button" class="stop-btn" id="stop-btn">Stoppen</button>
     </div>
     <div class="stop-ask" id="stop-ask" hidden>
-      <span>Wedstrijd stoppen? De stand gaat verloren.</span>
+      <span id="stop-text">Wedstrijd stoppen? De stand gaat verloren.</span>
       <div class="quick">
         <button type="button" class="btn danger" id="stop-yes">Ja, stoppen</button>
         <button type="button" class="btn" id="stop-no">Nee, doorgaan</button>

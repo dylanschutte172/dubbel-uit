@@ -200,3 +200,21 @@ test("121 met een eigen aantal darts", () => {
   assert.equal(L.createTraining("121").maxTurns, 3);
   assert.equal(L.createTraining("121", { turns: 4 }).maxTurns, 4);
 });
+
+test("eindeloos legs: de wedstrijd stopt nooit vanzelf", () => {
+  const m = L.createMatch({ start: 40, legs: 0, sets: 1, players: [{ name: "A" }] });
+  for (let i = 0; i < 5; i++) {
+    const ev = L.addDart(m, L.dart(2, 20));
+    assert.equal(ev.type, "leg");
+  }
+  assert.equal(m.winner, null);
+  assert.equal(m.players[0].stats.legsWon, 5);
+  assert.equal(m.legNo, 6);
+});
+
+test("training eindeloos: rondes 0 stopt nooit vanzelf", () => {
+  const t = L.createTraining("121", { rounds: 0 });
+  for (let i = 0; i < 50; i++) L.trainingResult(t, i % 3 === 0, 9);
+  assert.equal(t.done, false);
+  assert.equal(t.round, 51);
+});

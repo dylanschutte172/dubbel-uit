@@ -276,15 +276,18 @@
     $("player-options").hidden = settings.mode !== "players";
     $("me-field").hidden = settings.mode === "players";
     $("training-options").hidden = !training;
-    $("game-options").hidden = training;
+    var endless = training && settings.train === "endless";
+    $("game-options").hidden = training && !endless;
+    $("legs-sets").hidden = endless;
+    $("format-text").hidden = endless;
     pressSeg("opt-train", settings.train);
     pressSeg("opt-range", settings.trainRange);
     pressSeg("opt-turns", settings.train === "121" ? settings.train121Turns : settings.trainTurns);
     pressSeg("opt-rounds", settings.trainRounds);
     pressSeg("opt-atc", settings.atcMode);
     $("train-range").hidden = settings.train !== "checkout";
-    $("train-turns").hidden = settings.train === "atc";
-    $("train-rounds").hidden = settings.train === "atc";
+    $("train-turns").hidden = settings.train === "atc" || endless;
+    $("train-rounds").hidden = settings.train === "atc" || endless;
     $("train-atc").hidden = settings.train !== "atc";
     $("start-btn").textContent = training ? "Start training" : "Start wedstrijd";
     $("me-name").value = settings.me;
@@ -335,13 +338,35 @@
   }
 
   // Wedstrijd stoppen (met bevestiging op de pagina zelf).
-  $("stop-btn").addEventListener("click", function () { $("stop-ask").hidden = false; });
+  function isEndless() { return !!match && !match.training && match.cfg.legs === 0; }
+
+  $("stop-btn").addEventListener("click", function () {
+    var keep = isEndless() || (match && match.training && match.training.results.length);
+    $("stop-text").textContent = isEndless()
+      ? "Stoppen? Je legs worden bewaard in je statistieken."
+      : match && match.training
+        ? "Training stoppen? Je gespeelde rondes worden bewaard."
+        : "Wedstrijd stoppen? De stand gaat verloren.";
+    $("stop-yes").textContent = keep ? "Ja, opslaan en stoppen" : "Ja, stoppen";
+    $("stop-ask").hidden = false;
+  });
   $("stop-no").addEventListener("click", function () { $("stop-ask").hidden = true; });
   $("stop-yes").addEventListener("click", function () {
     $("stop-ask").hidden = true;
     cancelBot();
     if (stream) stopCamera();
-    if (match && match.training && match.training.results.length) saveTraining(match.training);
+    if (match && match.training && match.training.results.length) {
+      var tr = match.training;
+      tr.endedAt = Date.now();
+      finishTraining(tr);
+      return;
+    }
+    if (isEndless() && match.players[0].stats.darts > 0) {
+      match.winner = 0;
+      match.endedAt = Date.now();
+      finishMatch();
+      return;
+    }
     match = null;
     undoStack = [];
     recentDarts = [];
@@ -359,6 +384,13 @@
 
   function startTraining() {
     if (settings.train === "atc") { startATC(); return; }
+    if (settings.train === "endless") {
+      startMatch({
+        start: settings.start, legs: 0, sets: 1, doubleOut: settings.out === "double", first: 0,
+        players: [{ name: myName() }],
+      });
+      return;
+    }
     var range = settings.trainRange.split("-").map(Number);
     var t = L.createTraining(settings.train, {
       min: range[0], max: range[1], rounds: settings.trainRounds,
@@ -674,9 +706,10 @@
     var cur = match.players[leg.current];
     $("who-turn").textContent = match.winner !== null ? match.players[match.winner].name + " wint!" : cur.name + (cur.bot ? " gooit…" : " gooit");
     $("leg-info").textContent = (match.cfg.sets > 1 ? "Set " + match.setNo + " · " : "") + "Leg " + match.legNo + " · " + match.cfg.start + (match.cfg.doubleOut ? " dubbel uit" : "");
+    if (match.cfg.legs === 0 && !match.training) $("leg-info").textContent += " · eindeloos";
     if (match.training) {
       var tr = match.training;
-      $("who-turn").textContent = (tr.type === "121" ? "121" : "Uitgooien") + " · ronde " + tr.round + "/" + tr.rounds;
+      $("who-turn").textContent = (tr.type === "121" ? "121" : "Uitgooien") + " · ronde " + tr.round + (tr.rounds ? "/" + tr.rounds : "");
       $("leg-info").textContent = "Beurt " + Math.min(tr.maxTurns, leg.turns.length + 1) + " van " + tr.maxTurns + (tr.type === "121" ? " · veilig " + tr.locked : "");
     }
 
@@ -1004,6 +1037,7 @@
     lastResult = match;
     var entry = {
       v: 2,
+      solo: match.cfg.legs === 0,
       date: match.endedAt || Date.now(),
       start: match.cfg.start,
       legs: match.cfg.legs,
@@ -1053,7 +1087,9 @@
     var m = lastResult;
     $("result-sub").hidden = true;
     var w = m.players[m.winner];
-    $("result-title").textContent = w.bot ? "De bot wint" : w.name + " wint!";
+    $("result-title").textContent = m.cfg.legs === 0
+      ? m.players[0].stats.legsWon + (m.players[0].stats.legsWon === 1 ? " leg gegooid" : " legs gegooid")
+      : w.bot ? "De bot wint" : w.name + " wint!";
     var rows = [
       [m.cfg.sets > 1 ? "Sets" : "Legs", function (p) { return m.cfg.sets > 1 ? p.stats.setsWon : p.stats.legsWon; }],
       ["Gemiddelde", function (p) { return L.threeDartAverage(p.stats).toFixed(1); }],
@@ -1139,16 +1175,19 @@
   }
 
   function aggregate(rows) {
-    var a = { matches: rows.length, wins: 0, points: 0, darts: 0, f9Points: 0, f9Darts: 0, dblDarts: 0, dblHits: 0,
+    var a = { matches: rows.length, games: 0, legsCounted: 0, wins: 0, points: 0, darts: 0, f9Points: 0, f9Darts: 0, dblDarts: 0, dblHits: 0,
       s180: 0, s140: 0, s100: 0, highOut: 0, bestLeg: 0, legsWon: 0, legsPlayed: 0 };
     rows.forEach(function (r) {
       var p = r.me;
       var won = p.won !== undefined ? p.won : r.h.players[r.h.winner] === p;
-      if (won) a.wins++;
+      if (!r.h.solo) {
+        a.games++;
+        if (won) a.wins++;
+        if (p.legsPlayed) { a.legsWon += p.legs || 0; a.legsCounted += p.legsPlayed; }
+      }
       ["points", "darts", "f9Points", "f9Darts", "dblDarts", "dblHits", "s180", "s140", "s100", "legsPlayed"].forEach(function (k) {
         a[k] += p[k] || 0;
       });
-      if (p.legsPlayed) a.legsWon += p.legs || 0;
       if ((p.highOut || 0) > a.highOut) a.highOut = p.highOut;
       if (p.bestLeg && (!a.bestLeg || p.bestLeg < a.bestLeg)) a.bestLeg = p.bestLeg;
     });
@@ -1227,8 +1266,8 @@
     var tiles = [
       ["First 9", fmt1(a.f9), "gemiddelde eerste 9 darts"],
       ["Uitgooi %", a.co === null ? "–" : Math.round(a.co) + "%", a.dblHits + " van " + a.dblDarts + " op de dubbel"],
-      ["Gewonnen", a.wins + "/" + a.matches, Math.round((a.wins / a.matches) * 100) + "% van je wedstrijden"],
-      ["Legs", a.legsWon + "/" + a.legsPlayed, a.legsPlayed ? Math.round((a.legsWon / a.legsPlayed) * 100) + "% gewonnen" : ""],
+      ["Gewonnen", a.games ? a.wins + "/" + a.games : "–", a.games ? Math.round((a.wins / a.games) * 100) + "% van je wedstrijden" : "nog geen wedstrijden"],
+      ["Legs gegooid", a.legsPlayed, a.legsCounted ? Math.round((a.legsWon / a.legsCounted) * 100) + "% gewonnen in wedstrijden" : ""],
       ["Hoogste uitgooi", a.highOut || "–", ""],
       ["Snelste leg", a.bestLeg ? a.bestLeg : "–", a.bestLeg ? "darts" : ""],
       ["180's", a.s180, ""],
@@ -1266,8 +1305,8 @@
       var item = document.createElement("div");
       item.className = "panel item";
       var badge = document.createElement("span");
-      badge.className = "badge" + (won ? " win" : "");
-      badge.textContent = won ? "Winst" : "Verlies";
+      badge.className = "badge" + (won && !h.solo ? " win" : "");
+      badge.textContent = h.solo ? "Solo" : won ? "Winst" : "Verlies";
       var title = document.createElement("b");
       title.textContent = h.players.map(function (p) { return p.bot ? "Bot (" + p.bot + ")" : p.name; }).join(" – ");
       var score = document.createElement("span");

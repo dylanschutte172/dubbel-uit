@@ -356,7 +356,8 @@
     match.players.forEach(function (pl) { pl.stats.legsPlayed++; });
     match.legsInSet[w]++;
     var event = { type: "leg", player: w, score: checkoutScore };
-    if (match.legsInSet[w] >= match.cfg.legs) {
+    // legs = 0: eindeloos doorgooien, de wedstrijd stopt alleen als je zelf stopt.
+    if (match.cfg.legs && match.legsInSet[w] >= match.cfg.legs) {
       p.stats.setsWon++;
       event.type = "set";
       if (p.stats.setsWon >= match.cfg.sets) {
@@ -491,7 +492,7 @@
     opts = opts || {};
     var t = {
       type: type,
-      rounds: opts.rounds || 10,
+      rounds: opts.rounds !== undefined ? opts.rounds : 10, // 0 = eindeloos
       round: 1,
       results: [],
       done: false,
@@ -525,7 +526,7 @@
       t.target = trainingTarget(t);
     }
     t.round++;
-    if (t.round > t.rounds) {
+    if (t.rounds && t.round > t.rounds) {
       t.done = true;
       t.endedAt = Date.now();
     }
