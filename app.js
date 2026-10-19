@@ -59,7 +59,7 @@
   var kpValue = "";
 
   // ── Schermen ───────────────────────────────────────────────────────────
-  var SCREENS = ["setup", "play", "result", "history", "atc", "camdev"];
+  var SCREENS = ["setup", "play", "result", "history", "atc", "camdev", "link"];
 
   function show(name) {
     SCREENS.forEach(function (s) { $("screen-" + s).hidden = s !== name; });
@@ -90,7 +90,7 @@
       $(id).hidden = !canSpeak;
     });
     $("voice-label").textContent = settings.voice ? "Geluid aan" : "Geluid uit";
-    $("voice-label-2").textContent = settings.voice ? "Geluid aan" : "Geluid uit";
+    $("voice-label-2").textContent = settings.voice ? "Geluid" : "Stil";
   }
   function toggleVoice() {
     settings.voice = !settings.voice;
@@ -1850,6 +1850,7 @@
       onState: function (state, text) {
         setPill("pair-state", state, state === "on" ? "Verbonden" : state === "error" ? "Fout" : "Wacht");
         $("mode-camera").classList.toggle("remote-on", state === "on");
+        document.body.classList.toggle("paired", state === "on");
         $("pair-info").hidden = state === "on";
         if (state === "on") { setCamStatus("ready", "Camera-telefoon verbonden"); toast("Camera verbonden"); sendState(); }
         else if (text) setCamStatus(state === "error" ? "error" : "off", text);
@@ -1870,6 +1871,7 @@
     $("pair-start").hidden = false;
     $("pair-stop").hidden = true;
     $("mode-camera").classList.remove("remote-on");
+    document.body.classList.remove("paired");
     setPill("pair-state", "off", "Uit");
     setCamStatus("off", stream ? "Camera kijkt mee" : "Camera staat uit");
   }

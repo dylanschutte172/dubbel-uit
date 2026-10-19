@@ -300,6 +300,10 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 .pair-code { font: 700 52px/1 var(--font-display); letter-spacing: 0.12em; text-align: center; padding: 8px 0; }
 #mode-camera.remote-on #cam-ui .cam-box, #mode-camera.remote-on #calib-hint, #mode-camera.remote-on #cam-start,
 #mode-camera.remote-on #cam-calib, #mode-camera.remote-on .cam-settings { display: none; }
+.linkscreen { display: grid; gap: 14px; }
+.linkscreen[hidden] { display: none; }
+.link-title { margin: 0 0 6px; font: 700 30px/1.1 var(--font-display); text-transform: uppercase; }
+.linkscreen .pair { margin-bottom: 0; background: var(--surface); }
 .camdev { display: grid; gap: 14px; }
 .camdev[hidden] { display: none; }
 .camdev-head .stop-btn { margin-left: auto; }
@@ -372,7 +376,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
   header.top { display: none; }
   .wrap { padding-block: calc(10px + env(safe-area-inset-top, 0px)) calc(84px + env(safe-area-inset-bottom, 0px)); }
   .bottombar {
-    display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
     background: var(--surface); border-top: 1px solid var(--line);
     padding-block: 6px calc(6px + env(safe-area-inset-bottom, 0px));
     padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px));
@@ -408,6 +412,7 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
       <button type="button" data-screen="setup">Nieuw</button>
       <button type="button" data-screen="play">Spel</button>
       <button type="button" data-screen="history">Statistiek</button>
+      <button type="button" data-screen="link">Koppel</button>
     </nav>
     <button type="button" class="icon-btn" id="voice-toggle" aria-pressed="true" title="Scores laten omroepen">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -536,12 +541,6 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
       <span class="muted" id="format-text"></span>
     </div>
 
-    <div class="panel camdev-entry">
-      <span class="label">Tweede toestel?</span>
-      <p class="muted">Gebruik een oude telefoon of iPad als camera bij het bord. Hij stuurt je darts naar het scorebord.</p>
-      <button type="button" class="btn" id="camdev-open">Dit toestel als camera</button>
-    </div>
-
     <div class="start-row">
       <button type="button" class="btn" id="resume-btn" hidden>Verder met huidige wedstrijd</button>
       <button type="button" class="btn primary" id="start-btn">Start wedstrijd</button>
@@ -596,17 +595,6 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
         </div>
 
         <div id="mode-camera" hidden>
-          <div class="pair" id="pair-host">
-            <div class="pair-head"><b>Andere telefoon als camera</b><span class="pill" id="pair-state" data-state="off">Uit</span></div>
-            <div id="pair-info" hidden>
-              <p class="muted">Zet een tweede telefoon of iPad bij het bord. Open daar Dubbel Uit, kies <b>Nieuw</b> → <b>Dit toestel als camera</b> en vul deze code in:</p>
-              <div class="pair-code num" id="pair-code">······</div>
-            </div>
-            <div class="quick">
-              <button type="button" class="btn" id="pair-start">Koppel een camera-telefoon</button>
-              <button type="button" class="btn" id="pair-stop" hidden>Ontkoppelen</button>
-            </div>
-          </div>
           <div id="cam-ui">
           <div class="calib-hint" id="calib-hint" hidden></div>
           <div class="cam-box" id="cam-box">
@@ -638,6 +626,30 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
           </div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- Koppelen -->
+  <section id="screen-link" class="linkscreen" hidden>
+    <div>
+      <h2 class="link-title">Telefoons koppelen</h2>
+      <p class="muted">Zet een tweede telefoon of iPad als camera bij het bord. Die herkent je darts en stuurt ze naar dit scorebord. Beide toestellen hebben internet nodig.</p>
+    </div>
+    <div class="pair" id="pair-host">
+      <div class="pair-head"><b>Dit toestel is het scorebord</b><span class="pill" id="pair-state" data-state="off">Uit</span></div>
+      <div id="pair-info" hidden>
+        <p class="muted">Open Dubbel Uit op de telefoon bij het bord, kies onderin <b>Koppel</b> → <b>Dit toestel is de camera</b> en vul deze code in:</p>
+        <div class="pair-code num" id="pair-code">······</div>
+      </div>
+      <div class="quick">
+        <button type="button" class="btn" id="pair-start">Code maken</button>
+        <button type="button" class="btn" id="pair-stop" hidden>Ontkoppelen</button>
+      </div>
+    </div>
+    <div class="pair">
+      <div class="pair-head"><b>Dit toestel is de camera</b></div>
+      <p class="muted">Kies dit op de telefoon die bij het bord staat. Je vult daarna de code van het scorebord in.</p>
+      <button type="button" class="btn primary" id="camdev-open">Dit toestel is de camera</button>
     </div>
   </section>
 
@@ -770,6 +782,10 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V11M12 19V5M19 19v-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
     <span>Statistiek</span>
   </button>
+  <button type="button" data-screen="link">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Koppel</span>
+  </button>
   <button type="button" id="voice-toggle-2" aria-pressed="true">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path class="waves" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     <span id="voice-label-2">Geluid</span>
@@ -785,9 +801,9 @@ table.stats tbody th { text-align: left; font-weight: 500; color: var(--muted); 
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="logic.js"></script>
-<script src="link.js"></script>
-<script src="vision.js"></script>
-<script src="app.js"></script>
+<script src="logic.js?v=10"></script>
+<script src="link.js?v=10"></script>
+<script src="vision.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

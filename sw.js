@@ -1,5 +1,5 @@
 /* Dubbel Uit — service worker: de app werkt ook zonder internet. */
-const CACHE = "dubbel-uit-v9";
+const CACHE = "dubbel-uit-v10";
 const FILES = [
   "./",
   "./index.html",
@@ -31,7 +31,10 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    fetch(e.request)
+    // Eigen bestanden: altijd bij de server navragen of er een nieuwere versie is.
+    fetch(new URL(e.request.url).origin === self.location.origin
+      ? new Request(e.request.url, { cache: "no-cache", credentials: "same-origin" })
+      : e.request)
       .then((res) => {
         if (res.ok && new URL(e.request.url).origin === self.location.origin) {
           const copy = res.clone();
@@ -39,6 +42,6 @@ self.addEventListener("fetch", (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html")))
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("./index.html")))
   );
 });

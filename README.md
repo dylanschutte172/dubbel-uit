@@ -34,8 +34,8 @@ Een darts-scorebord als app voor je telefoon.
 
 Je kunt een oude telefoon of iPad als camera bij het bord zetten, terwijl je eigen telefoon of tablet het scorebord is.
 
-1. **Scorebord:** start een wedstrijd → **Camera** → **Koppel een camera-telefoon**. Je krijgt een code van 6 cijfers.
-2. **Camera-toestel:** open Dubbel Uit → **Nieuw** → **Dit toestel als camera**. Vul de code in en druk op **Verbinden**.
+1. **Scorebord:** druk onderin op **Koppel** → **Code maken**. Je krijgt een code van 6 cijfers.
+2. **Camera-toestel:** druk onderin op **Koppel** → **Dit toestel is de camera**. Vul de code in en druk op **Verbinden**.
 3. Kalibreer op het camera-toestel en gooi. De darts verschijnen op het scorebord.
 
 Op het camera-toestel kun je ook op **Mis**, **Herstel** en **Darts zijn eruit** drukken. Beide toestellen hebben internet nodig. De koppeling gebruikt [PeerJS](https://peerjs.com/) (MIT-licentie, zie `vendor/peerjs-LICENSE`): de toestellen vinden elkaar via de gratis PeerJS-server en praten daarna rechtstreeks met elkaar.
